@@ -1,0 +1,7 @@
+Acme Health is evaluating an ambulatory neurosurgical navigation platform.
+The total addressable market for intraoperative imaging is growing at roughly
+12 percent annually, driven by the shift of procedures to outpatient settings.
+The primary barrier to adoption is reimbursement uncertainty: payers have not
+established consistent codes for outpatient neuronavigation.
+Lead analyst contact: priya.menon@orbees.com, direct line +1 408-555-0190.
+Patient identifier MRN: 884213 should never appear in any client deliverable.

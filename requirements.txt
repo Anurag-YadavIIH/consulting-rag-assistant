@@ -1,0 +1,33 @@
+# Core (required) — all run locally, no data leaves the machine
+numpy>=1.24
+pyyaml>=6.0
+
+# Ingestion
+python-pptx>=0.6.23     # .pptx slide + notes extraction
+pypdf>=4.0              # .pdf text extraction
+
+# Embeddings (local). Downloads a small model on first run.
+sentence-transformers>=2.6   # default: BAAI/bge-small-en-v1.5
+
+# Hybrid retrieval: BM25 keyword search fused with dense cosine search (RRF).
+# Pure Python, no ML weights — always available, even under --offline.
+rank-bm25>=0.2
+
+# --- Optional backends (uncomment as needed) ---
+# faster-whisper>=1.0        # local meeting-audio transcription
+# presidio-analyzer>=2.2     # ML-based PII/PHI detection
+# presidio-anonymizer>=2.2
+# requests>=2.31             # only for the Ollama LLM backend
+# faiss-cpu>=1.7             # swap-in vector index for larger corpora
+# openai>=1.0                # OpenAIEmbedder (opt-in via --embedder openai)
+# groq>=0.9                  # Groq-backed contextual chunking / eval judge (Stage 2/3)
+# psycopg[binary]>=3.1       # PgVectorStore (opt-in via --store pgvector)
+# pgvector>=0.2              # numpy<->VECTOR adapter for psycopg, used by PgVectorStore
+# langfuse>=2.0               # query tracing (opt-in via LANGFUSE_* env vars)
+
+# Config / local infra
+pydantic-settings>=2.4   # typed settings loaded from .env
+python-dotenv>=1.0       # .env parsing (pulled in by pydantic-settings)
+
+# Dev
+pytest>=8.0
