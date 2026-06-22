@@ -357,6 +357,78 @@ catches transport-level failures (connection refused, timeout), not just
 HTTP error statuses, and `ui/app.py` renders a plain "can't reach the API"
 message instead of a stack trace.
 
+## Frontend (Next.js)
+
+`frontend/` is a Next.js (App Router) + TypeScript + Tailwind client over the
+same FastAPI service the Streamlit UI talks to — same "service + client"
+split: all business logic, auth, and RBAC stay server-side, and every call
+goes through one typed wrapper, `frontend/lib/api.ts`
+(`me()`/`query()`/`ingest()`, mirroring `ui/api_client.py`'s pattern in
+TypeScript). It is a **separate, independent dependency set**
+(`frontend/package.json`, npm) — it doesn't touch `requirements.txt`,
+`requirements-api.txt`, or `requirements-ui.txt`, and installing/running it
+has no effect on the offline CLI demo or any `pytest tests/` run.
+
+### Running it locally (Windows)
+
+```powershell
+# 1. Infra + API (same as "Demo UI" above)
+docker compose up -d
+python scripts/migrate_pg.py --dim 384
+python scripts/migrate_authz.py
+```
+
+```powershell
+# 2. Run the API with DEV_AUTH_BYPASS — no Google sign-in needed locally.
+#    Local-dev only; see "Fail-closed startup checks" above.
+$env:DEV_AUTH_BYPASS = "true"
+$env:APP_ENV = "development"
+$env:APP_JWT_SECRET = "any-real-random-secret-at-least-16-chars"
+$env:CORS_ALLOWED_ORIGINS = "http://localhost:3000"
+uvicorn consultrag.api.main:app --reload
+```
+
+```powershell
+# 3. In a second terminal: the frontend's own dependency set
+cd frontend
+copy .env.local.example .env.local
+# .env.local.example documents NEXT_PUBLIC_API_BASE_URL (defaults to
+# http://localhost:8000) and NEXT_PUBLIC_FALLBACK_ENGAGEMENTS.
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000`. `CORS_ALLOWED_ORIGINS` on the API side defaults
+to empty (no browser origin allowed) — it must be set explicitly, as above,
+for the browser-based frontend to reach the API at all; see `config.py`.
+
+**The production path is real Google sign-in, not bypass** — exactly as for
+the Streamlit UI. `frontend/lib/auth.ts`'s `getAuthHeaders()` is the single
+seam every API call goes through; it returns `{}` under dev-bypass today,
+and is the only file that changes when real Google OIDC sign-in replaces it.
+
+The Management area (`frontend/app/management/page.tsx`) only *renders* for
+high-clearance/admin users per `/me` — that gate is convenience/UI tidiness,
+not a security boundary. The backend enforces clearance and engagement
+membership on every endpoint regardless of what the frontend shows or hides.
+
+### Tests
+
+```bash
+cd frontend
+npm run test    # vitest, fetch mocked — no live backend needed, not run in CI against one
+```
+
+### A note on `npm install` audit output
+
+A fresh `npm install` currently reports a handful of dev-tooling advisories
+(esbuild's dev server allowing cross-origin requests; PostCSS's CSS
+stringify XSS) — both are build/dev-time concerns in transitive
+dependencies of Next.js/Vitest, not runtime exploits in this app's code.
+`npm audit fix --force` "fixes" them by downgrading `next` to `9.x`, which
+is not an upgrade — left unapplied deliberately rather than silently
+regressing the framework version.
+
 ## Design decisions (and the trade-offs)
 
 - **Redaction before indexing, not at display time.** Stronger guarantee — raw PII
@@ -421,6 +493,8 @@ scripts/        ingest.py, query.py, run_eval.py, migrate_pg.py,
                 migrate_authz.py, seed_authz.py
 ui/             api_client.py (thin httpx wrapper, no business logic),
                 app.py (Streamlit demo client — see "Demo UI" above)
+frontend/       Next.js + TypeScript client (lib/api.ts, lib/auth.ts) —
+                see "Frontend (Next.js)" above
 tests/          redaction, chunking, retrieval, reranking, pgvectorstore,
                 authz_repository, oidc, app_token, api, api_client,
                 end-to-end access control

@@ -58,5 +58,16 @@ class Settings(BaseSettings):
     langfuse_secret_key: str | None = None
     langfuse_host: str = "https://cloud.langfuse.com"
 
+    # CORS allowlist for browser-based clients (e.g. frontend/, the Next.js
+    # demo client) — comma-separated origins. Defaults to empty, which means
+    # CORS allows nothing: same fail-closed posture as APP_JWT_SECRET/APP_ENV
+    # above. Set CORS_ALLOWED_ORIGINS=http://localhost:3000 for local
+    # frontend dev; never trust a hardcoded origin in app code.
+    cors_allowed_origins: str = ""
+
+    @property
+    def cors_allowed_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]
+
 
 settings = Settings()

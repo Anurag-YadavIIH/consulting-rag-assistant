@@ -12,3 +12,8 @@ data/private/
 # scripts/corpus_sources.yaml, not source; don't commit the downloaded
 # PDFs/abstracts themselves.
 data/corpus/
+
+# Next.js frontend (frontend/) — separate dependency set from Python
+frontend/node_modules/
+frontend/.next/
+frontend/tsconfig.tsbuildinfo

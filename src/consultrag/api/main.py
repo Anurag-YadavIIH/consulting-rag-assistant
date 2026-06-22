@@ -11,6 +11,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from ..auth.app_token import ensure_app_jwt_secret_configured
 from ..auth.dev_bypass import ensure_dev_auth_bypass_is_safe, warn_bypass_active
@@ -49,6 +50,17 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="ConsultRAG API", lifespan=lifespan)
+
+# Fail-closed by default: CORS_ALLOWED_ORIGINS is empty unless explicitly
+# configured (see config.py), so no browser origin is allowed until someone
+# sets it — e.g. http://localhost:3000 for local frontend/ dev.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_allowed_origins_list,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(auth_routes.router)
 app.include_router(ingest_routes.router)
 app.include_router(query_routes.router)
