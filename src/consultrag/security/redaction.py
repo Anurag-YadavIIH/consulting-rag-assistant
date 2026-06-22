@@ -20,18 +20,22 @@ from typing import Callable, Pattern
 
 @dataclass(frozen=True)
 class RedactionRule:
-    """A single detector: a name, a compiled pattern, and an optional validator."""
+    """A single detector: a name, a compiled pattern, and an optional validator.
+    The validator receives the full re.Match (not just the matched string) so
+    it can inspect surrounding context — e.g. PHONE/IP_ADDRESS need to look at
+    what's around the match to tell a real phone number/IP apart from a DOI
+    or a hierarchical section number that merely has the same digit shape."""
     label: str
     pattern: Pattern[str]
-    validator: Callable[[str], bool] | None = None
+    validator: Callable[["re.Match[str]"], bool] | None = None
 
     def placeholder(self) -> str:
         return f"[REDACTED_{self.label}]"
 
 
-def _luhn_valid(number: str) -> bool:
+def _luhn_valid(match: "re.Match[str]") -> bool:
     """Luhn checksum — avoids redacting random 16-digit strings that aren't cards."""
-    digits = [int(d) for d in re.sub(r"\D", "", number)]
+    digits = [int(d) for d in re.sub(r"\D", "", match.group(0))]
     if len(digits) < 13:
         return False
     checksum = 0
@@ -43,6 +47,49 @@ def _luhn_valid(number: str) -> bool:
                 d -= 9
         checksum += d
     return checksum % 10 == 0
+
+
+def _is_phone_not_identifier(match: "re.Match[str]") -> bool:
+    """Rejects matches embedded in a slash-containing token — e.g. a DOI like
+    10.1016/j.jvs.2026.04.044, where the date-shaped suffix is digit-and-dot
+    but is not a phone number. A real phone number is never written adjacent
+    to a "/" within the same whitespace-delimited token."""
+    value = match.group(0)
+    if len(re.sub(r"\D", "", value)) < 8:
+        return False
+    text = match.string
+    tok_start, tok_end = match.start(), match.end()
+    while tok_start > 0 and not text[tok_start - 1].isspace():
+        tok_start -= 1
+    while tok_end < len(text) and not text[tok_end].isspace():
+        tok_end += 1
+    return "/" not in text[tok_start:tok_end]
+
+
+# A true IPv4 address has exactly 4 dot-separated octets and structurally
+# cannot have a 5th attached — "10.3.5.2.1" is unambiguously a hierarchical
+# outline number, never a real IP. This is the ONLY safe disambiguator found:
+# position/keyword-based exemptions (preceded by Table/Figure/Section, start
+# of a line, followed by ".") were tried and removed after stress-testing
+# showed they suppress real IPs sitting in those same ordinary positions —
+# see the session report. A 4-segment number like "10.1.4.1" is genuinely
+# indistinguishable from a real IP by shape alone, so it IS redacted now
+# (cosmetically over-redacts real outline numbers shaped exactly like an
+# IP — accepted as the safe trade-off; under-redaction is the actual failure
+# mode this module exists to prevent).
+_EXTRA_SEGMENT_RE = re.compile(r"^\.\d{1,3}\b")
+
+
+def _is_real_ip(match: "re.Match[str]") -> bool:
+    """Valid dotted-quad octets (each 0-255) and not part of a longer
+    hierarchical chain (a 5th attached segment, e.g. "10.3.5.2.1")."""
+    octets = match.group(0).split(".")
+    if not all(o.isdigit() and 0 <= int(o) <= 255 for o in octets):
+        return False
+    text = match.string
+    if _EXTRA_SEGMENT_RE.match(text[match.end() : match.end() + 4]):
+        return False
+    return True
 
 
 # Order matters: more specific patterns first so they win.
@@ -64,7 +111,7 @@ DEFAULT_RULES: list[RedactionRule] = [
         # US-style and international phone numbers, fairly permissive.
         "PHONE",
         re.compile(r"\b(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?){2,4}\d{2,4}\b"),
-        validator=lambda s: len(re.sub(r"\D", "", s)) >= 8,
+        validator=_is_phone_not_identifier,
     ),
     RedactionRule(
         # US Medical Record Number style tags often seen in healthcare docs.
@@ -78,6 +125,7 @@ DEFAULT_RULES: list[RedactionRule] = [
     RedactionRule(
         "IP_ADDRESS",
         re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
+        validator=_is_real_ip,
     ),
 ]
 
@@ -117,7 +165,7 @@ class Redactor:
         def _sub(rule: RedactionRule):
             def replace(match: re.Match[str]) -> str:
                 value = match.group(0)
-                if rule.validator and not rule.validator(value):
+                if rule.validator and not rule.validator(match):
                     return value  # leave it — failed validation, probably a false positive
                 report.add(rule.label)
                 return rule.placeholder()

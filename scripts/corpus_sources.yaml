@@ -1,0 +1,38 @@
+# Editable source list for scripts/fetch_corpus.py. Public sources only —
+# nothing confidential, nothing from real client work. Edit freely to curate
+# what gets downloaded.
+
+# Full 10-K filings (HTML -> plain text at fetch time). The script resolves
+# the LATEST filing for each CIK dynamically via SEC's submissions API, so
+# this config doesn't go stale when a new annual filing is published.
+# Best-effort: a filing that doesn't convert to clean text is skipped, not
+# ingested (see fetch_corpus.py's _looks_clean check).
+sec_filings:
+  - company: "Medtronic"
+    cik: "0001613103"
+    form: "10-K"
+  - company: "Integra LifeSciences"
+    cik: "0000917520"
+    form: "10-K"
+
+# Direct PDF downloads, ingested as-is through the existing PdfLoader.
+fda_pdfs:
+  - name: "FDA - Implanted BCI Devices Guidance (2021)"
+    url: "https://www.fda.gov/media/120362/download"
+    filename: "fda_bci_guidance.pdf"
+  - name: "FDA - Neurological Devices Panel Reference Sheet"
+    url: "https://www.fda.gov/media/149642/download"
+    filename: "fda_neuro_panel_reference.pdf"
+  - name: "FDA 510(k) - Medivis (AR surgical navigation)"
+    url: "https://www.accessdata.fda.gov/cdrh_docs/pdf23/K231897.pdf"
+    filename: "fda_510k_medivis_K231897.pdf"
+  - name: "FDA 510(k) - Fasikl (neurostimulation)"
+    url: "https://www.accessdata.fda.gov/cdrh_docs/pdf25/K250096.pdf"
+    filename: "fda_510k_fasikl_K250096.pdf"
+
+# NCBI E-utilities esearch + efetch -> plain-text abstracts.
+pubmed:
+  - query: "neuronavigation surgical"
+    max_results: 6
+  - query: "intraoperative neuromonitoring outcomes"
+    max_results: 6

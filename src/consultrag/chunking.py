@@ -91,7 +91,18 @@ class Chunker:
 
     def chunk_sections(self, sections: list[RawSection]) -> list[Chunk]:
         all_chunks: list[Chunk] = []
-        for i, section in enumerate(sections):
-            base = f"{section.source_path}#{section.locator or i}"
+        next_index_for_path: dict[str, int] = {}
+        for section in sections:
+            # Per-document counter, keyed by source_path — NOT a batch-wide
+            # enumerate() index. A section's fallback locator depends only on
+            # how many sections from the SAME file came before it, never on
+            # what other files are in the batch or their sort order. Without
+            # this, the same file's chunk_id (a PgVector key and audit
+            # reference) would silently change depending on what else was
+            # ingested alongside it.
+            per_file_index = next_index_for_path.get(section.source_path, 0)
+            next_index_for_path[section.source_path] = per_file_index + 1
+            locator = section.locator or str(per_file_index)
+            base = f"{section.source_path}#{locator}"
             all_chunks.extend(self.chunk_section(section, base))
         return all_chunks

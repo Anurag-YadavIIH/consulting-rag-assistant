@@ -7,3 +7,8 @@ index/
 .env
 .DS_Store
 data/private/
+
+# Fetched public corpus (scripts/fetch_corpus.py) — regenerable from
+# scripts/corpus_sources.yaml, not source; don't commit the downloaded
+# PDFs/abstracts themselves.
+data/corpus/

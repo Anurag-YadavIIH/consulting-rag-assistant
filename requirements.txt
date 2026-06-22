@@ -24,6 +24,8 @@ rank-bm25>=0.2
 # psycopg[binary]>=3.1       # PgVectorStore (opt-in via --store pgvector)
 # pgvector>=0.2              # numpy<->VECTOR adapter for psycopg, used by PgVectorStore
 # langfuse>=2.0               # query tracing (opt-in via LANGFUSE_* env vars)
+# pyjwt[crypto]>=2.8         # OIDC/app-token verification (Phase 4 API, src/consultrag/auth/)
+# cryptography>=42.0         # RSA support for pyjwt[crypto]; also installed transitively by it
 
 # Config / local infra
 pydantic-settings>=2.4   # typed settings loaded from .env

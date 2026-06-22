@@ -24,6 +24,7 @@ def main():
     ap.add_argument("--index", default="index", help="index directory")
     ap.add_argument("--engagement", default=None)
     ap.add_argument("--clearance", type=int, default=1)
+    ap.add_argument("--table", default="chunks", help="pgvector table name (--store pgvector only)")
     add_embedder_args(ap)
     args = ap.parse_args()
     resolve_network_policy(args, ap)
@@ -34,7 +35,7 @@ def main():
     if args.store == "pgvector":
         from consultrag.pgvectorstore import PgVectorStore
 
-        store = PgVectorStore.load(dim=embedder.dim)
+        store = PgVectorStore.load(dim=embedder.dim, table_name=args.table)
         audit_path = index_dir / "audit.log"
         audit_path.parent.mkdir(parents=True, exist_ok=True)
     else:

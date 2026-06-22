@@ -32,11 +32,24 @@ class Settings(BaseSettings):
     # as a vector store backend instead of the local NumPy store.
     database_url: str = "postgresql://consultrag:consultrag@localhost:5432/consultrag"
 
-    # OAuth/OIDC placeholders for wiring RBAC (security/access.py) to a real
-    # identity provider instead of in-process User objects.
-    oauth_issuer: str | None = None
+    # OIDC authentication (auth/oidc.py). Provider-agnostic: issuer and
+    # jwks_uri are read from the discovery document at oauth_discovery_url,
+    # never hardcoded — Google by default, but any compliant OIDC provider
+    # works by pointing this at its discovery URL. oauth_audience is your
+    # OAuth client ID (the token's `aud` claim must match it).
+    oauth_discovery_url: str = "https://accounts.google.com/.well-known/openid-configuration"
     oauth_audience: str | None = None
-    oauth_jwks_url: str | None = None
+
+    # App session token (auth/app_token.py), issued at POST /auth/login after
+    # Google/OIDC verification succeeds. Authentication (who, Stage 2) and
+    # authorization (what, authz/repository.py) stay separate even here — the
+    # app token's claims are populated FROM the authz store, never the reverse.
+    app_jwt_secret: str | None = None
+    dev_auth_bypass: bool = False
+    # Must explicitly be "development"/"dev" for DEV_AUTH_BYPASS to be
+    # permitted (auth/dev_bypass.py). Defaults to None (unset), which DENIES
+    # bypass — this is a whitelist, not "anything that isn't production".
+    app_env: str | None = None
 
     # Langfuse query tracing (tracing.py). Unset = tracing is a no-op.
     # Defaults target Langfuse Cloud's free tier; point langfuse_host at a

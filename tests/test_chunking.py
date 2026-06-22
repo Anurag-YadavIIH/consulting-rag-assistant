@@ -5,6 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from consultrag.chunking import Chunker, approx_token_count
 from consultrag.ingestion.base import RawSection
+from consultrag.ingestion.registry import LoaderRegistry
 
 
 def _section(text):
@@ -51,3 +52,26 @@ def test_chunk_ids_use_forward_slashes_even_from_backslash_source_path():
     for c in chunks:
         assert "\\" not in c.chunk_id
         assert c.chunk_id.startswith("data/sample/doc.txt")
+
+
+def test_chunk_id_for_a_file_is_independent_of_other_files_in_the_batch(tmp_path):
+    # "aaa" sorts before the target file, "zzz" sorts after — proves the
+    # fallback locator depends only on the target file's OWN sections, never
+    # on batch position or alphabetical order of sibling files.
+    (tmp_path / "aaa_before.txt").write_text("Alpha content before.")
+    (tmp_path / "target.txt").write_text("Target file content alone.")
+    (tmp_path / "zzz_after.txt").write_text("Zeta content after.")
+
+    registry = LoaderRegistry()
+    chunker = Chunker()
+
+    solo_sections = registry.load(tmp_path / "target.txt")
+    solo_ids = [c.chunk_id for c in chunker.chunk_sections(solo_sections)]
+
+    batch_sections = registry.load_directory(tmp_path)
+    batch_target_ids = [
+        c.chunk_id for c in chunker.chunk_sections(batch_sections) if "target.txt" in c.chunk_id
+    ]
+
+    assert solo_ids == batch_target_ids
+    assert solo_ids  # sanity: not accidentally empty

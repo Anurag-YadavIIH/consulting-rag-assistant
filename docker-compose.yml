@@ -11,5 +11,19 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./docker/init/01-enable-pgvector.sql:/docker-entrypoint-initdb.d/01-enable-pgvector.sql:ro
 
+  api:
+    build:
+      context: .
+      dockerfile: docker/api/Dockerfile
+    env_file: .env
+    environment:
+      # Inside the compose network Postgres is reachable as `postgres`, not
+      # `localhost` — overrides whatever .env has for host-side CLI tools.
+      DATABASE_URL: postgresql://consultrag:consultrag@postgres:5432/consultrag
+    depends_on:
+      - postgres
+    ports:
+      - "8000:8000"
+
 volumes:
   pgdata:

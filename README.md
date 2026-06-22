@@ -104,9 +104,19 @@ fused candidates (downloads `BAAI/bge-reranker-base` on first use).
 | `--store pgvector` | opt-in | Postgres+pgvector vector store (via `docker compose up -d`) with a SQL-level RBAC filter as defense-in-depth | chunk text/vectors, to your own Postgres container — nothing external |
 | `--rerank` | opt-in | Local cross-encoder reranking | nothing at query time (model weights download once) |
 | Langfuse keys in `.env` | opt-in | Query tracing (question, retrieved ids+scores, latency, token usage) | question + answer text, to Langfuse Cloud (or your self-hosted instance) |
+| Any protected API route (Phase 4) | n/a for CLI | OIDC token verification | fetches your IdP's (Google by default) discovery doc + public JWKS — key material only, never user/client data |
 
 `--offline` is mutually exclusive with `--embedder openai`, `--store pgvector`,
 and `--rerank` — combining them is a CLI error, not a silent fallback.
+
+**Upcoming, not yet built** (config placeholders exist; no feature code uses
+them yet — listed here so the egress story stays honest about what's actually
+live vs. planned):
+
+| Planned flag/config | What it would do | What would leave the machine |
+|---|---|---|
+| `--contextualize` (Groq) | LLM-generated one-line context prepended to each chunk before embedding | redacted chunk + document text, to Groq's API |
+| Live web search (Tavily) | Merge current external results with internal retrieval | sanitized queries (client/engagement names stripped), to Tavily |
 
 ## Local setup (Windows + Docker Desktop)
 
@@ -148,7 +158,8 @@ Postgres/pgvector backend and hosted-API config.
 
 `src/consultrag/config.py` exposes a `Settings` object (via `pydantic-settings`)
 for `OPENAI_API_KEY`, `GROQ_API_KEY`, `TAVILY_API_KEY`, `DATABASE_URL`,
-`OAUTH_ISSUER`/`OAUTH_AUDIENCE`/`OAUTH_JWKS_URL`, `LANGFUSE_PUBLIC_KEY`/
+`OAUTH_DISCOVERY_URL`/`OAUTH_AUDIENCE` (OIDC authentication, provider-agnostic
+— see `src/consultrag/auth/oidc.py`), `LANGFUSE_PUBLIC_KEY`/
 `LANGFUSE_SECRET_KEY`/`LANGFUSE_HOST`, and the existing Ollama settings — all
 optional, all defaulted, and not imported by any offline code path today.
 
@@ -196,6 +207,151 @@ Langfuse is a drop-in swap via `LANGFUSE_HOST`; it isn't a docker-compose
 service here given its footprint (its own Postgres + ClickHouse + Redis)
 relative to this project's size.
 
+### Which requirements file for which mode
+
+| File | What it's for | Needed for |
+|---|---|---|
+| `requirements.txt` | Core offline CLI demo + base test suite | `scripts/ingest.py`/`query.py`/`run_eval.py`, `pytest tests/ -q` |
+| `requirements-api.txt` | The FastAPI service (`src/consultrag/api/`) | `uvicorn consultrag.api.main:app`, the Docker image (`docker/api/Dockerfile`) |
+
+`requirements-api.txt` references `requirements.txt` via `-r`, so installing
+it alone (`pip install -r requirements-api.txt`) gets you everything needed to
+run the API — you don't need to install both separately.
+
+## API service (Phase 4)
+
+`src/consultrag/api/` wraps the existing pipeline/RAG engine behind a FastAPI
+service with Google/OIDC authentication and Postgres-backed RBAC
+authorization (`src/consultrag/authz/`). Authentication (who you are) and
+authorization (what you can do) are deliberately separate — a Google ID token
+only ever proves identity; permissions always come from the
+`engagement_memberships` table, never from the token's own claims.
+
+```bash
+pip install -r requirements-api.txt
+python scripts/migrate_pg.py --dim 384
+python scripts/migrate_authz.py
+python scripts/seed_authz.py --google-sub <your-sub> --email you@example.com \
+    --engagement acme --role analyst --clearance 2
+
+uvicorn consultrag.api.main:app --reload
+# or: docker compose up -d api
+```
+
+Set `OAUTH_AUDIENCE` (your Google OAuth client ID) and a real
+`APP_JWT_SECRET` in `.env` first — the app refuses to start with an unset or
+placeholder `APP_JWT_SECRET` (see "Fail-closed startup checks" below).
+
+### Getting a Google ID token for manual testing
+
+You need an OAuth 2.0 **Web application** client ID in
+[Google Cloud Console](https://console.cloud.google.com/apis/credentials) to
+set as `OAUTH_AUDIENCE`. To get a token to test with, the quickest path is the
+[OAuth 2.0 Playground](https://developers.google.com/oauthplayground):
+click the gear icon, check "Use your own OAuth credentials", paste your
+client ID/secret, then on the left pick the `openid`, `email`, and `profile`
+scopes, authorize, and exchange the code — the playground shows you the raw
+ID token (a long `eyJ...` string). It's short-lived (about an hour), so grab
+a fresh one each session.
+
+### Calling the API from Windows PowerShell
+
+```powershell
+$googleToken = "eyJ...the ID token from the OAuth Playground..."
+
+$login = Invoke-RestMethod -Uri "http://localhost:8000/auth/login" -Method Post `
+    -Headers @{ Authorization = "Bearer $googleToken" }
+$accessToken = $login.access_token
+
+Invoke-RestMethod -Uri "http://localhost:8000/query" -Method Post `
+    -Headers @{ Authorization = "Bearer $accessToken" } `
+    -ContentType "application/json" `
+    -Body (@{ question = "What is the barrier to adoption?"; engagement = "acme" } | ConvertTo-Json)
+```
+
+(`Invoke-RestMethod` is PowerShell's native HTTP client; `curl` on Windows is
+usually aliased to it. If you have real `curl.exe` installed, the equivalent
+is `curl.exe -X POST http://localhost:8000/query -H "Authorization: Bearer $accessToken" -H "Content-Type: application/json" -d '{\"question\":\"...\",\"engagement\":\"acme\"}'`.)
+
+### Fail-closed startup checks
+
+The app refuses to start (not a warning — a hard error) in two cases:
+
+- `APP_JWT_SECRET` is unset or looks like a placeholder (`""`, `"changeme"`,
+  `"secret"`, shorter than 16 characters, etc.) — unless `DEV_AUTH_BYPASS` is on.
+- `DEV_AUTH_BYPASS=true` is set but `APP_ENV` doesn't **explicitly** equal
+  `development` or `dev`. This is a whitelist, not a blacklist: an unset,
+  empty, or misspelled `APP_ENV` denies bypass exactly like `APP_ENV=production`
+  would — there's no "anything that isn't literally production is fine"
+  fallback. When bypass *is* correctly enabled, every request is treated as a
+  fixed dev user and a visible warning is logged once at startup.
+
+`DEV_AUTH_BYPASS` is for local development only — every protected route skips
+authentication entirely when it's on.
+
+### Test coverage note: what a green CI run does and doesn't prove
+
+Most of the API test suite (`tests/test_api.py`) needs no real Postgres —
+authorization for `/ingest`/`/query`/`/draft` is decided entirely from the
+verified access token's own claims, so fakes/dependency-overrides cover the
+401/403 gate, spoofed-parameter rejection, and cross-engagement leakage
+checks without a database. **One test is the exception**
+(`test_admin_via_real_authz_store_crosses_engagements`) and it's marked
+skip-if-Postgres-unreachable, same as `tests/test_pgvectorstore.py` and
+`tests/test_authz_repository.py`. That means: **a green `pytest tests/ -q` run
+with no Postgres running does not exercise PgVectorStore's SQL-level
+isolation filter or the real authz-store admin path at all** — those are
+silently skipped, not passed. Run `docker compose up -d` first if you want
+those to actually execute; check for `SKIPPED` lines in `-rs` output
+(`pytest tests/ -q -rs`) to know which mode you're actually in.
+
+## Demo UI
+
+`ui/app.py` is a thin Streamlit client over the FastAPI service — it holds no
+business logic and never touches the DB, vector store, or RAG engine directly;
+every server interaction goes through `ui/api_client.py`'s `query()`/`ingest()`/
+`me()`. "Service + client": the API is the service, this is just a client of it.
+
+**Not containerized.** Running `streamlit run` locally against the composed
+API is sufficient for a demo — there's no `ui` service in `docker-compose.yml`
+and none is planned; this keeps the compose stack to what actually needs to be
+a long-running service (Postgres, the API), not a UI you'd run once to look at.
+
+```bash
+# 1. Infra + API (see "API service" above for the full sequence)
+docker compose up -d
+python scripts/migrate_pg.py --dim 384
+python scripts/migrate_authz.py
+```
+
+```powershell
+# 2. Run the API with DEV_AUTH_BYPASS for local UI use — no Google sign-in
+#    needed to click around the demo. This is local-dev only; see the
+#    fail-closed startup checks above for why bypass can't accidentally
+#    leak into anything that looks like production.
+$env:DEV_AUTH_BYPASS = "true"
+$env:APP_ENV = "development"
+$env:APP_JWT_SECRET = "any-real-random-secret-at-least-16-chars"
+uvicorn consultrag.api.main:app --reload
+```
+
+```powershell
+# 3. In a second terminal: the UI's own, separate dependency set
+pip install -r requirements-ui.txt
+$env:API_BASE_URL = "http://localhost:8000"   # default if unset
+streamlit run ui/app.py
+```
+
+`requirements-ui.txt` is a *third* independent dependency set (base / api /
+ui) — `streamlit` + `httpx` only, nothing from `requirements.txt` or
+`requirements-api.txt` pulled in or duplicated.
+
+**The production demo path is real Google sign-in, not bypass.** Every
+auth-related decision in the UI funnels through one function —
+`get_auth_headers()` in `ui/api_client.py` — commented as the single seam
+that changes when Google OIDC sign-in replaces `DEV_AUTH_BYPASS`; nothing
+else in the UI assumes how auth works.
+
 ## Design decisions (and the trade-offs)
 
 - **Redaction before indexing, not at display time.** Stronger guarantee — raw PII
@@ -218,11 +374,18 @@ python scripts/run_eval.py --offline
 
 Retrieval metrics are reported on `eval/eval_set.jsonl`. Replace the sample set
 with a real 20–30 question gold set from your own corpus to get meaningful numbers.
+Recorded baseline runs (date, gold-set size, embedder, config, literal
+hit@k/recall@k/MRR for both backends) live in [BENCHMARKS.md](BENCHMARKS.md) —
+append a new dated entry there each time the eval set or retrieval pipeline
+changes meaningfully, rather than relying on memory of "it used to be X".
 
 ## Roadmap
 
 - Speaker diarization for meeting audio (pyannote)
-- Groq-backed contextual chunking and a RAGAS-style/LLM-judge generation eval
+- Groq-backed contextual chunking (config placeholder exists; not implemented)
+- Live web search (Tavily) merged with internal retrieval, with an outbound
+  query sanitizer (config placeholder exists; not implemented)
+- A RAGAS-style/LLM-judge generation eval (faithfulness, answer relevancy)
 - Presidio-based NER redaction for names/orgs/locations
 - A small web UI for analysts
 
@@ -244,7 +407,16 @@ src/consultrag/
   rag.py        retrieve→access-filter→rerank→prompt→LLM→cited answer
   audit.py      append-only audit log
   eval.py       hit@k / recall@k / MRR (hybrid retrieval, RBAC-free by design)
-scripts/        ingest.py, query.py, run_eval.py, migrate_pg.py
+  authz/        Postgres-backed RBAC: users + engagement_memberships
+  auth/         authentication: OIDC verification, app session tokens,
+                DEV_AUTH_BYPASS (auth != authz — see "API service" above)
+  api/          FastAPI service: /auth/login, /auth/refresh, /ingest,
+                /query, /draft, /me
+scripts/        ingest.py, query.py, run_eval.py, migrate_pg.py,
+                migrate_authz.py, seed_authz.py
+ui/             api_client.py (thin httpx wrapper, no business logic),
+                app.py (Streamlit demo client — see "Demo UI" above)
 tests/          redaction, chunking, retrieval, reranking, pgvectorstore,
+                authz_repository, oidc, app_token, api, api_client,
                 end-to-end access control
 ```

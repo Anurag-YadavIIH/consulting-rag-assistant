@@ -157,7 +157,7 @@ class RAGEngine:
             )
         return reranked
 
-    def answer(self, query: str, user: User) -> Answer:
+    def answer(self, query: str, user: User, system_prompt: str | None = None) -> Answer:
         start = time.perf_counter()
         chunks = self.retrieve(query, user)
         if not chunks:
@@ -173,7 +173,7 @@ class RAGEngine:
             )
         context = _format_context(chunks)
         user_prompt = f"QUESTION: {query}\n\nCONTEXT:\n{context}"
-        text = self.llm.complete(SYSTEM_PROMPT, user_prompt)
+        text = self.llm.complete(system_prompt or SYSTEM_PROMPT, user_prompt)
         latency_ms = (time.perf_counter() - start) * 1000
         citations = [
             Citation(

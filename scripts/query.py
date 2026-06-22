@@ -28,6 +28,7 @@ def main():
     ap.add_argument("--roles", nargs="*", default=["analyst"])
     ap.add_argument("--clearance", type=int, default=1)
     ap.add_argument("--llm", choices=["ollama", "extractive"], default="extractive")
+    ap.add_argument("--table", default="chunks", help="pgvector table name (--store pgvector only)")
     add_embedder_args(ap, include_rerank=True)
     args = ap.parse_args()
     resolve_network_policy(args, ap)
@@ -38,7 +39,7 @@ def main():
     if args.store == "pgvector":
         from consultrag.pgvectorstore import PgVectorStore
 
-        store = PgVectorStore.load(dim=embedder.dim)
+        store = PgVectorStore.load(dim=embedder.dim, table_name=args.table)
     else:
         store = NumpyVectorStore.load(args.index)
 

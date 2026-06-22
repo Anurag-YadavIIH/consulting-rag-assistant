@@ -1,0 +1,9 @@
+# Run the FastAPI service (src/consultrag/api/): pip install -r requirements-api.txt
+# Not needed for the offline CLI demo or the base test suite — see requirements.txt.
+-r requirements.txt
+
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pyjwt[crypto]>=2.8
+psycopg[binary]>=3.1
+pgvector>=0.2
