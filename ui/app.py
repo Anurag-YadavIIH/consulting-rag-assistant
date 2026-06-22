@@ -14,7 +14,9 @@ import os
 import streamlit as st
 
 from api_client import (
+    API_BASE_URL,
     ApiError,
+    ConnectionFailedError,
     ForbiddenError,
     NotAuthenticatedError,
     ServerError,
@@ -36,6 +38,12 @@ st.caption(
 try:
     with st.spinner("Loading your access..."):
         me_info = me()
+except ConnectionFailedError:
+    st.error(
+        f"Can't reach the API at `{API_BASE_URL}` — is it running? "
+        "See the README \"Demo UI\" section for the startup sequence."
+    )
+    st.stop()
 except NotAuthenticatedError:
     st.error("Not signed in. Start the API and confirm DEV_AUTH_BYPASS is on for local use.")
     st.stop()
@@ -77,6 +85,8 @@ if submitted:
     try:
         with st.spinner("Retrieving and answering..."):
             result = query(question, engagement=engagement)
+    except ConnectionFailedError:
+        st.error(f"Can't reach the API at `{API_BASE_URL}` — is it still running?")
     except NotAuthenticatedError:
         st.error("Not signed in.")
     except ForbiddenError:
@@ -124,6 +134,8 @@ if show_ingest:
         try:
             with st.spinner("Ingesting..."):
                 n = ingest(ingest_path, ingest_engagement, int(ingest_clearance))
+        except ConnectionFailedError:
+            st.error(f"Can't reach the API at `{API_BASE_URL}` — is it still running?")
         except NotAuthenticatedError:
             st.error("Not signed in.")
         except ForbiddenError as e:

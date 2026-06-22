@@ -14,6 +14,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "ui"))
 
 from api_client import (
+    ConnectionFailedError,
     ForbiddenError,
     NotAuthenticatedError,
     ServerError,
@@ -104,6 +105,30 @@ def test_me_503_raises_server_error():
     with patch("httpx.get", return_value=_response(503, {"detail": "service unavailable"})):
         with pytest.raises(ServerError):
             me()
+
+
+# --- API unreachable entirely (connection refused, not an HTTP status) ------
+# Regression: this case was originally uncaught and leaked a raw httpx
+# traceback to the Streamlit UI instead of a clean error.
+
+
+def test_me_connection_refused_raises_connection_failed_error():
+    with patch("httpx.get", side_effect=httpx.ConnectError("Connection refused")):
+        with pytest.raises(ConnectionFailedError) as exc_info:
+            me()
+    assert "Connection refused" in exc_info.value.detail
+
+
+def test_query_connection_refused_raises_connection_failed_error():
+    with patch("httpx.post", side_effect=httpx.ConnectError("Connection refused")):
+        with pytest.raises(ConnectionFailedError):
+            query("anything")
+
+
+def test_ingest_timeout_raises_connection_failed_error():
+    with patch("httpx.post", side_effect=httpx.TimeoutException("timed out")):
+        with pytest.raises(ConnectionFailedError):
+            ingest("data/sample", "acme")
 
 
 def test_error_detail_falls_back_to_text_when_body_is_not_json():

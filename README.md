@@ -352,6 +352,11 @@ auth-related decision in the UI funnels through one function —
 that changes when Google OIDC sign-in replaces `DEV_AUTH_BYPASS`; nothing
 else in the UI assumes how auth works.
 
+The UI degrades gracefully if the API isn't running — `ui/api_client.py`
+catches transport-level failures (connection refused, timeout), not just
+HTTP error statuses, and `ui/app.py` renders a plain "can't reach the API"
+message instead of a stack trace.
+
 ## Design decisions (and the trade-offs)
 
 - **Redaction before indexing, not at display time.** Stronger guarantee — raw PII

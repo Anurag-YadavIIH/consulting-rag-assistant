@@ -42,6 +42,16 @@ class ServerError(ApiError):
     """5xx — the API itself failed."""
 
 
+class ConnectionFailedError(ApiError):
+    """The API could not be reached at all (connection refused, DNS
+    failure, timeout) — distinct from a server-side HTTP error status.
+    Wraps httpx.RequestError so the UI never has to catch a raw httpx
+    exception or show a traceback for "the API isn't running"."""
+
+    def __init__(self, detail: str):
+        super().__init__(0, detail)
+
+
 @dataclass
 class Citation:
     source_path: str
@@ -98,7 +108,10 @@ def _raise_for_status(resp: httpx.Response) -> None:
 
 
 def me() -> MeInfo:
-    resp = httpx.get(f"{API_BASE_URL}/me", headers=get_auth_headers(), timeout=10)
+    try:
+        resp = httpx.get(f"{API_BASE_URL}/me", headers=get_auth_headers(), timeout=10)
+    except httpx.RequestError as e:
+        raise ConnectionFailedError(str(e)) from e
     _raise_for_status(resp)
     data = resp.json()
     return MeInfo(
@@ -110,12 +123,15 @@ def me() -> MeInfo:
 
 
 def query(question: str, engagement: str | None = None) -> QueryResult:
-    resp = httpx.post(
-        f"{API_BASE_URL}/query",
-        json={"question": question, "engagement": engagement},
-        headers=get_auth_headers(),
-        timeout=60,
-    )
+    try:
+        resp = httpx.post(
+            f"{API_BASE_URL}/query",
+            json={"question": question, "engagement": engagement},
+            headers=get_auth_headers(),
+            timeout=60,
+        )
+    except httpx.RequestError as e:
+        raise ConnectionFailedError(str(e)) from e
     _raise_for_status(resp)
     data = resp.json()
     return QueryResult(
@@ -125,11 +141,14 @@ def query(question: str, engagement: str | None = None) -> QueryResult:
 
 
 def ingest(path: str, engagement: str, clearance: int = 1) -> int:
-    resp = httpx.post(
-        f"{API_BASE_URL}/ingest",
-        json={"path": path, "engagement": engagement, "clearance": clearance},
-        headers=get_auth_headers(),
-        timeout=120,
-    )
+    try:
+        resp = httpx.post(
+            f"{API_BASE_URL}/ingest",
+            json={"path": path, "engagement": engagement, "clearance": clearance},
+            headers=get_auth_headers(),
+            timeout=120,
+        )
+    except httpx.RequestError as e:
+        raise ConnectionFailedError(str(e)) from e
     _raise_for_status(resp)
     return resp.json()["chunks_ingested"]
