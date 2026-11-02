@@ -1,0 +1,2 @@
+# Copy to terraform.tfvars. Find your public IP with: curl.exe -s https://checkip.amazonaws.com
+allowed_cidrs = ["YOUR.PUBLIC.IP.HERE/32"]

@@ -17,3 +17,12 @@ data/corpus/
 frontend/node_modules/
 frontend/.next/
 frontend/tsconfig.tsbuildinfo
+
+# Local frontend settings
+frontend/.env.local
+
+# Terraform state contains database and JWT secrets; never commit it.
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*
+infra/terraform/terraform.tfvars
