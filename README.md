@@ -74,6 +74,12 @@ to any third-party API unless you explicitly wire one in.
                                    (RBAC + clearance)            (Ollama)
 ```
 
+## AWS deployment
+
+I deployed the API to AWS with **Terraform, Docker, ECR, ECS Fargate, an Application Load Balancer, RDS PostgreSQL with pgvector, Secrets Manager, IAM and CloudWatch**. In testing, database migrations ran as a one-off Fargate task, `/health` returned `200` through the load balancer, and a protected route returned `401` without a token.
+
+It isn't a public demo yet: HTTPS, the frontend, sign-in and document ingestion aren't deployed or tested on AWS, and I shut the environment down after testing to control cost. Details, evidence and limitations are in [docs/aws-deployment.md](docs/aws-deployment.md).
+
 ## Quickstart
 
 ```bash
