@@ -41,6 +41,7 @@ My IP only ── HTTP ──▶ Application Load Balancer (public subnets, 2 av
 | Run the API as an ECS service | 1 task running: `service consultrag-api has reached a steady state` |
 | `GET /health` through the load balancer | `200 OK`, `{"status":"ok"}` |
 | `GET /me` with no token | `401 Unauthorized`, `{"detail":"missing Authorization header"}` |
+| Ship a code change with an ECS rolling deployment | New image pushed to ECR, and `/health` then returned `{"status":"ok","version":"0.2.0"}` |
 
 **Not tested on AWS yet:** ingesting documents, answering queries, and Google sign-in.
 
@@ -79,6 +80,13 @@ Then push the image to the `ecr_repository_url` output, run `scripts/migrate_pg.
 
 ```powershell
 terraform apply -var="desired_count=1"
+```
+
+To ship a code change, build and push a new image, then start a rolling deployment. ECS starts the new container and waits for it to pass health checks before draining the old one:
+
+```powershell
+aws ecs update-service --cluster consultrag --service consultrag-api --force-new-deployment
+aws ecs wait services-stable --cluster consultrag --services consultrag-api
 ```
 
 When finished, run `terraform destroy`.
