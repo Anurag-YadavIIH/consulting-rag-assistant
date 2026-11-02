@@ -25,6 +25,8 @@ from .routes import query as query_routes
 
 logger = logging.getLogger(__name__)
 
+API_VERSION = "0.2.0"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -49,7 +51,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="ConsultRAG API", lifespan=lifespan)
+app = FastAPI(title="ConsultRAG API", version=API_VERSION, lifespan=lifespan)
 
 # Fail-closed by default: CORS_ALLOWED_ORIGINS is empty unless explicitly
 # configured (see config.py), so no browser origin is allowed until someone
@@ -73,4 +75,4 @@ def health() -> dict[str, str]:
     """Liveness check for the load balancer. Deliberately touches no database
     or model, so a database outage doesn't make the load balancer kill and
     restart otherwise healthy containers."""
-    return {"status": "ok"}
+    return {"status": "ok", "version": API_VERSION}

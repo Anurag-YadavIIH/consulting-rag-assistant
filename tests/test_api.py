@@ -448,4 +448,4 @@ def test_health_needs_no_auth():
     with TestClient(app) as c:
         resp = c.get("/health")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ok"}
+    assert resp.json() == {"status": "ok", "version": "0.2.0"}
