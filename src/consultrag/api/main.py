@@ -66,3 +66,11 @@ app.include_router(ingest_routes.router)
 app.include_router(query_routes.router)
 app.include_router(draft_routes.router)
 app.include_router(me_routes.router)
+
+
+@app.get("/health", tags=["health"])
+def health() -> dict[str, str]:
+    """Liveness check for the load balancer. Deliberately touches no database
+    or model, so a database outage doesn't make the load balancer kill and
+    restart otherwise healthy containers."""
+    return {"status": "ok"}

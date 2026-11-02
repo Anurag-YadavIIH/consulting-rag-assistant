@@ -40,6 +40,8 @@ def ensure_schema(conn, dim: int, table_name: str = "chunks") -> None:
     source of truth for the schema."""
     table_name = _validate_table_name(table_name)
     with conn.cursor() as cur:
+        # RDS doesn't run docker/init/, so the migration must enable pgvector.
+        cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
         cur.execute(
             f"""
             CREATE TABLE IF NOT EXISTS {table_name} (

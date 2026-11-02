@@ -442,3 +442,10 @@ def test_dev_bypass_on_with_unset_app_env_refuses_to_start(monkeypatch):
     with pytest.raises(RuntimeError):
         with TestClient(app):
             pass
+
+
+def test_health_needs_no_auth():
+    with TestClient(app) as c:
+        resp = c.get("/health")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ok"}

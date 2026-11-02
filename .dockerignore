@@ -1,0 +1,14 @@
+# Keep secrets, local data and unrelated code out of the build context.
+.env
+.env.*
+.git
+.venv
+venv
+__pycache__
+*.pyc
+data
+eval
+frontend
+index
+tests
+ui
