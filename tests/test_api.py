@@ -549,6 +549,17 @@ def test_upload_success_ingests_and_cites_original_filename(client, sample_store
     assert not any("consultrag-upload-" in s or s.endswith("/upload.txt") for s in sources)
 
 
+def test_upload_refreshes_keyword_index_for_queries(client, sample_store):
+    # The engine (and its BM25 snapshot) already exists before the upload, as
+    # in a running API. Without a refresh the new chunk would only reach the
+    # dense leg of hybrid retrieval.
+    _, _, engine, _ = sample_store
+    resp = _upload(client, _acme_user(), "fresh.txt", b"The ZEBRAFISH_FRESH_TOKEN appears here.")
+    assert resp.status_code == 200
+    hits = engine.retriever._bm25.search("ZEBRAFISH_FRESH_TOKEN", top_k=3)
+    assert hits and hits[0]["metadata"]["source_path"] == "fresh.txt"
+
+
 def test_upload_redacts_pii_and_custom_terms_before_storage(sample_store):
     embedder, store, engine, _ = sample_store
     embedded_texts: list[str] = []
@@ -600,6 +611,14 @@ def test_upload_above_own_clearance_is_403(client, sample_store):
     resp = _upload(client, _acme_user(clearance=1), "a.txt", b"anything", clearance=5)
     assert resp.status_code == 403
     assert _doc_chunks(store, "acme", "a.txt") == []
+
+
+@pytest.mark.parametrize("clearance", [0, -1])
+def test_upload_clearance_below_one_is_rejected(client, sample_store, clearance):
+    _, store, _, _ = sample_store
+    resp = _upload(client, _acme_user(), "low.txt", b"Some content.", clearance=clearance)
+    assert resp.status_code == 422
+    assert _doc_chunks(store, "acme", "low.txt") == []
 
 
 @pytest.mark.parametrize("filename", ["tool.exe", "notes.docx", "meeting.mp3", "noextension"])

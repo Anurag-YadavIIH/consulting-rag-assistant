@@ -29,9 +29,10 @@ from ...auth.dev_bypass import is_dev_auth_bypass_permitted
 from ...config import settings
 from ...ingestion.loaders import PdfLoader, PptxLoader, TextLoader
 from ...pipeline import DocumentLoadError, IngestionPipeline
+from ...rag import RAGEngine
 from ...security.access import AccessPolicy, User
 from ...vectorstore import DocumentReplaceForbidden
-from ..deps import get_current_app_user, get_ingestion_pipeline
+from ..deps import get_current_app_user, get_ingestion_pipeline, get_rag_engine
 from ..schemas import IngestRequest, IngestResponse, UploadResponse
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,16 @@ def _authorize_ingest(user: User, engagement: str, clearance: int) -> None:
         )
 
 
+def _refresh_keyword_index(engine: RAGEngine) -> None:
+    # HybridRetriever's BM25 index is a snapshot taken when the engine is
+    # built. Without a refresh, newly ingested chunks only reach the dense leg
+    # and lose to every older chunk that scores in both legs. This refreshes
+    # THIS process only; other API processes stay stale until they restart.
+    refresh = getattr(engine.retriever, "refresh", None)
+    if refresh is not None:
+        refresh()
+
+
 def clean_filename(raw: str | None) -> str:
     """The uploaded filename is user input. It is only ever used as a label
     (citations, chunk IDs, audit), never as a filesystem path: keep the last
@@ -85,11 +96,13 @@ def ingest(
     body: IngestRequest,
     user: User = Depends(get_current_app_user),
     pipeline: IngestionPipeline = Depends(get_ingestion_pipeline),
+    engine: RAGEngine = Depends(get_rag_engine),
 ) -> IngestResponse:
     _authorize_ingest(user, body.engagement, body.clearance)
     n = pipeline.ingest_path(
         body.path, engagement=body.engagement, clearance=body.clearance, user_id=user.user_id
     )
+    _refresh_keyword_index(engine)
     return IngestResponse(chunks_ingested=n)
 
 
@@ -97,9 +110,11 @@ def ingest(
 def ingest_upload(
     file: UploadFile = File(...),
     engagement: str = Form(...),
-    clearance: int = Form(1),
+    # 1 is the lowest clearance level (security/access.py); FastAPI returns 422 below it.
+    clearance: int = Form(1, ge=1),
     user: User = Depends(get_current_app_user),
     pipeline: IngestionPipeline = Depends(get_ingestion_pipeline),
+    engine: RAGEngine = Depends(get_rag_engine),
 ) -> UploadResponse:
     _authorize_ingest(user, engagement, clearance)
 
@@ -156,4 +171,5 @@ def ingest_upload(
 
     if n == 0:
         raise HTTPException(status_code=422, detail="no extractable text found in the file")
+    _refresh_keyword_index(engine)
     return UploadResponse(chunks_ingested=n, source_name=name)

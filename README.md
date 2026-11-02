@@ -295,7 +295,8 @@ curl.exe -F "file=@data/sample/acme_research.txt" -F "engagement=acme" -F "clear
 
 - **Who can upload:** the same rules as `/ingest`. You must belong to the
   engagement (or be a global admin), and you can't upload above your own
-  clearance.
+  clearance. Clearance must be at least 1, the lowest level; `0` or a
+  negative value returns `422`.
 - **File types:** `.txt`, `.md`, `.pdf` and `.pptx`, taken from the loaders.
   Audio isn't accepted through upload yet. Anything else returns `415`.
 - **Size limit:** `MAX_UPLOAD_MB`, default 25. Larger files return `413`.
@@ -323,8 +324,27 @@ Limitations:
   whole request before the size check runs, so the limit stops the app from
   processing a large file but doesn't stop it from being sent. A hard cap on
   request size needs to be set at the proxy or load balancer.
+- **The keyword index refreshes only in the API process that handled the
+  upload.** Retrieval combines vector search with a BM25 keyword index held in
+  memory. After an upload, that process rebuilds its index, so new documents
+  can be found straight away. Any other API process keeps its old index until
+  it restarts, and finds new documents through vector search only, where they
+  rank lower. One API task runs one process, so this is fine for a single
+  task. Running more than one task needs a shared fix first, such as keyword
+  search in Postgres or a refresh signal between tasks.
 - **Tested locally only.** This was tested with the unit tests and with Docker
-  Compose and Postgres on my machine. It hasn't been deployed or tested on AWS.
+  Compose and Postgres on my machine:
+  - `data/sample/deck.pptx` and a small generated PDF were uploaded through
+    the API, and queries cited them as `deck.pptx`, slide 1, and by the PDF's
+    filename, page 1, with no API restart.
+  - In a browser, the Next.js upload panel uploaded `deck.pptx` and showed
+    "Ingested 2 chunks from deck.pptx". A query then cited `deck.pptx`,
+    slide 1, as the first source.
+  - An unsupported file type returned `415` through curl. The warning banner
+    for it hasn't been checked in a browser, because the file picker hides
+    unsupported types.
+
+  It hasn't been deployed or tested on AWS.
 
 **Path-based `POST /ingest` is development-only.** It ingests any path the
 server can read, so it returns `404` unless `APP_ENV` is explicitly
