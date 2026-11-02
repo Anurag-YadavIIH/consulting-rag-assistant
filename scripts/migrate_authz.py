@@ -19,7 +19,7 @@ def main():
     conn = psycopg.connect(settings.database_url)
     try:
         ensure_authz_schema(conn)
-        print(f"Authz schema ready at {settings.database_url}")
+        print("Authz schema ready")
     finally:
         conn.close()
 

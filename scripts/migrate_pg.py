@@ -32,7 +32,7 @@ def main():
     conn = psycopg.connect(dsn)
     try:
         ensure_schema(conn, args.dim, args.table)
-        print(f"Schema ready: table '{args.table}' (dim={args.dim}) at {dsn}")
+        print(f"Schema ready: table '{args.table}' (dim={args.dim})")
     finally:
         conn.close()
 
