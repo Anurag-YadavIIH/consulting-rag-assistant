@@ -1,7 +1,8 @@
 /**
  * Thin typed wrapper around the ConsultRAG FastAPI backend — the ONLY place
  * in this app that calls fetch(). Components never construct a request
- * themselves; everything routes through query()/ingest()/me() below.
+ * themselves; everything routes through query()/uploadDocument()/ingest()/me()
+ * below.
  *
  * Mirrors src/consultrag/api/schemas.py exactly. No invented fields — this
  * module holds no business logic and never talks to the DB, vector store,
@@ -32,6 +33,13 @@ export interface QueryResponse {
 export interface IngestResponse {
   chunks_ingested: number;
 }
+
+export interface UploadResponse extends IngestResponse {
+  source_name: string;
+}
+
+/** File types POST /ingest/upload accepts (the server is authoritative). */
+export const UPLOAD_ACCEPT = ".txt,.md,.pdf,.pptx";
 
 export interface MeResponse {
   user_id: string;
@@ -102,12 +110,21 @@ async function request<T>(
   path: string,
   body?: unknown
 ): Promise<T> {
+  // FormData goes as-is: the browser sets the multipart Content-Type
+  // (with its boundary) itself, so it must not be overridden here.
+  const isForm = body instanceof FormData;
   let res: Response;
   try {
     res = await fetch(`${API_BASE_URL}${path}`, {
       method,
-      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      headers: isForm
+        ? { ...getAuthHeaders() }
+        : { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: isForm
+        ? body
+        : body !== undefined
+          ? JSON.stringify(body)
+          : undefined,
     });
   } catch (e) {
     throw new ConnectionError(e instanceof Error ? e.message : String(e));
@@ -141,6 +158,20 @@ export function query(
   });
 }
 
+export function uploadDocument(
+  file: File,
+  engagement: string,
+  clearance = 1
+): Promise<UploadResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("engagement", engagement);
+  form.append("clearance", String(clearance));
+  return request<UploadResponse>("POST", "/ingest/upload", form);
+}
+
+/** Path-based ingest. The API only serves this when APP_ENV is development
+ * (404 otherwise); kept for local use. Prefer uploadDocument(). */
 export function ingest(
   path: string,
   engagement: string,

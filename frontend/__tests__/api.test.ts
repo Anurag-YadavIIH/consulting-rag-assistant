@@ -10,9 +10,11 @@ import {
   ForbiddenError,
   NotAuthenticatedError,
   ServerError,
+  ApiError,
   ingest,
   me,
   query,
+  uploadDocument,
 } from "../lib/api";
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -166,4 +168,56 @@ it("error detail falls back to raw text when the body is not JSON", async () => 
     )
   );
   await expect(me()).rejects.toMatchObject({ detail: "not json" });
+});
+
+// --- uploadDocument() --------------------------------------------------------
+
+it("uploadDocument() sends multipart form data, not JSON", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    jsonResponse(200, { chunks_ingested: 3, source_name: "notes.txt" })
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const file = new File(["hello"], "notes.txt", { type: "text/plain" });
+
+  const result = await uploadDocument(file, "acme", 2);
+
+  expect(result).toEqual({ chunks_ingested: 3, source_name: "notes.txt" });
+  const [url, init] = fetchMock.mock.calls[0];
+  expect(url).toMatch(/\/ingest\/upload$/);
+  expect(init.method).toBe("POST");
+  // The browser must set the multipart boundary itself.
+  expect(init.headers["Content-Type"]).toBeUndefined();
+  const body = init.body as FormData;
+  expect(body).toBeInstanceOf(FormData);
+  expect((body.get("file") as File).name).toBe("notes.txt");
+  expect(body.get("engagement")).toBe("acme");
+  expect(body.get("clearance")).toBe("2");
+});
+
+it.each([
+  [413, "file is larger than the 25 MB upload limit"],
+  [415, "unsupported file type '.exe'"],
+  [409, "a document with this name already exists in this engagement"],
+])("uploadDocument() surfaces %i as an ApiError with the detail", async (status, detail) => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation(async () => jsonResponse(status, { detail }))
+  );
+  const file = new File(["x"], "x.txt");
+  await expect(uploadDocument(file, "acme")).rejects.toMatchObject({
+    name: "ApiError",
+    status,
+    detail,
+  });
+  await expect(uploadDocument(file, "acme")).rejects.toBeInstanceOf(ApiError);
+});
+
+it("uploadDocument() raises ForbiddenError on 403", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(jsonResponse(403, { detail: "not a member of this engagement" }))
+  );
+  await expect(uploadDocument(new File(["x"], "x.txt"), "globex")).rejects.toThrow(
+    ForbiddenError
+  );
 });

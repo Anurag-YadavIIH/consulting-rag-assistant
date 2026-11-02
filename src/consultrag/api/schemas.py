@@ -44,6 +44,11 @@ class IngestResponse(BaseModel):
     chunks_ingested: int
 
 
+class UploadResponse(IngestResponse):
+    # The cleaned filename the document is stored and cited under.
+    source_name: str
+
+
 class QueryRequest(BaseModel):
     question: str
     engagement: str | None = None

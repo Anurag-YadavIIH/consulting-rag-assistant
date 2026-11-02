@@ -281,6 +281,59 @@ Invoke-RestMethod -Uri "http://localhost:8000/query" -Method Post `
 usually aliased to it. If you have real `curl.exe` installed, the equivalent
 is `curl.exe -X POST http://localhost:8000/query -H "Authorization: Bearer $accessToken" -H "Content-Type: application/json" -d '{\"question\":\"...\",\"engagement\":\"acme\"}'`.)
 
+### Uploading documents
+
+`POST /ingest/upload` takes a multipart form with `file`, `engagement` and
+`clearance` (default 1), so documents can be ingested without the files being
+on the server. It uses the same `IngestionPipeline` as everything else, so
+redaction still runs before anything is embedded or stored.
+
+```powershell
+curl.exe -F "file=@data/sample/acme_research.txt" -F "engagement=acme" -F "clearance=2" `
+    -H "Authorization: Bearer $accessToken" http://localhost:8000/ingest/upload
+```
+
+- **Who can upload:** the same rules as `/ingest`. You must belong to the
+  engagement (or be a global admin), and you can't upload above your own
+  clearance.
+- **File types:** `.txt`, `.md`, `.pdf` and `.pptx`, taken from the loaders.
+  Audio isn't accepted through upload yet. Anything else returns `415`.
+- **Size limit:** `MAX_UPLOAD_MB`, default 25. Larger files return `413`.
+- **Other errors:** an empty file returns `400`. A file that can't be parsed,
+  or has no extractable text, returns `422`.
+- **Citations** show the original filename, such as `acme_research.txt`. The
+  file is written to a temporary directory under a fixed name, and the
+  directory is deleted after every request, including failed ones. The
+  uploaded filename is never used as a filesystem path: only its last part is
+  kept, control characters are removed, and it's limited to 255 characters.
+- **Re-uploading a filename** that already exists in the same engagement
+  replaces that document. The old chunks are deleted and the new ones inserted
+  in one database transaction, so a shorter new version leaves nothing stale
+  behind and a failed upload leaves the old version in place. If any part of
+  the existing document has a clearance above yours, the upload returns `409`
+  and changes nothing (global admins can always replace). The same filename in
+  two engagements is stored as two separate documents.
+
+Limitations:
+
+- **Filenames are not redacted.** Redaction covers file contents only. The
+  filename is stored as provided and shown in citations, so it shouldn't
+  contain client names, patient details or other sensitive data.
+- **Oversized uploads still arrive before the `413`.** FastAPI receives the
+  whole request before the size check runs, so the limit stops the app from
+  processing a large file but doesn't stop it from being sent. A hard cap on
+  request size needs to be set at the proxy or load balancer.
+- **Tested locally only.** This was tested with the unit tests and with Docker
+  Compose and Postgres on my machine. It hasn't been deployed or tested on AWS.
+
+**Path-based `POST /ingest` is development-only.** It ingests any path the
+server can read, so it returns `404` unless `APP_ENV` is explicitly
+`development` or `dev` (the same strict allowlist as `DEV_AUTH_BYPASS`; unset
+or misspelled values keep it disabled). The Streamlit UI still uses it, so
+the Streamlit demo only works with `APP_ENV=development`. The Next.js
+frontend uses upload. For bulk server-side ingestion, use
+`scripts/ingest.py`.
+
 ### Fail-closed startup checks
 
 The app refuses to start (not a warning — a hard error) in two cases:
@@ -371,8 +424,9 @@ message instead of a stack trace.
 same FastAPI service the Streamlit UI talks to — same "service + client"
 split: all business logic, auth, and RBAC stay server-side, and every call
 goes through one typed wrapper, `frontend/lib/api.ts`
-(`me()`/`query()`/`ingest()`, mirroring `ui/api_client.py`'s pattern in
-TypeScript). It is a **separate, independent dependency set**
+(`me()`/`query()`/`uploadDocument()`/`ingest()`, mirroring
+`ui/api_client.py`'s pattern in TypeScript). The ingest panel uploads a file
+picked from your computer through `POST /ingest/upload`. It is a **separate, independent dependency set**
 (`frontend/package.json`, npm) — it doesn't touch `requirements.txt`,
 `requirements-api.txt`, or `requirements-ui.txt`, and installing/running it
 has no effect on the offline CLI demo or any `pytest tests/` run.
@@ -495,8 +549,8 @@ src/consultrag/
   authz/        Postgres-backed RBAC: users + engagement_memberships
   auth/         authentication: OIDC verification, app session tokens,
                 DEV_AUTH_BYPASS (auth != authz — see "API service" above)
-  api/          FastAPI service: /auth/login, /auth/refresh, /ingest,
-                /query, /draft, /me
+  api/          FastAPI service: /auth/login, /auth/refresh, /ingest/upload,
+                /ingest (development only), /query, /draft, /me
 scripts/        ingest.py, query.py, run_eval.py, migrate_pg.py,
                 migrate_authz.py, seed_authz.py
 ui/             api_client.py (thin httpx wrapper, no business logic),

@@ -60,7 +60,8 @@ I estimate about $0.10 to $0.13 an hour while running. I used AWS credits and ra
 ## Current limitations
 
 - No HTTPS, frontend or browser sign-in on AWS. The frontend still only supports a local development login.
-- `/ingest` reads a file path on the server, so cloud ingestion needs an upload flow, such as S3.
+- Document upload (`POST /ingest/upload`) was added after this deployment. It works with Docker Compose locally but hasn't been deployed or tested on AWS. The path-based `/ingest` now returns 404 unless `APP_ENV` is `development` or `dev`.
+- FastAPI receives a whole upload before checking its size, so an oversized file still arrives before the 413 is returned. A request size cap at the load balancer would be needed.
 - Terraform state is stored on my laptop, and deployments are manual, with no CI/CD yet.
 - The database is a single instance with no backups, because this is a learning environment holding no real data.
 - This setup is not reviewed for real client or patient data.

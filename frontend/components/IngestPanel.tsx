@@ -1,25 +1,25 @@
 "use client";
 
 import { useState } from "react";
-import { ingest } from "../lib/api";
+import { UPLOAD_ACCEPT, uploadDocument } from "../lib/api";
 import { ErrorBanner } from "./ErrorBanner";
 
 export function IngestPanel({ engagement }: { engagement: string | undefined }) {
-  const [path, setPath] = useState("");
+  const [file, setFile] = useState<File | null>(null);
   const [clearance, setClearance] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const [chunksIngested, setChunksIngested] = useState<number | null>(null);
+  const [result, setResult] = useState<{ chunks: number; name: string } | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!path.trim() || !engagement) return;
+    if (!file || !engagement) return;
     setLoading(true);
     setError(null);
-    setChunksIngested(null);
+    setResult(null);
     try {
-      const res = await ingest(path, engagement, clearance);
-      setChunksIngested(res.chunks_ingested);
+      const res = await uploadDocument(file, engagement, clearance);
+      setResult({ chunks: res.chunks_ingested, name: res.source_name });
     } catch (err) {
       setError(err);
     } finally {
@@ -31,19 +31,20 @@ export function IngestPanel({ engagement }: { engagement: string | undefined }) 
     <form onSubmit={handleSubmit} className="space-y-3">
       <div>
         <label className="block text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">
-          Server-side path
+          Document
         </label>
         <input
-          type="text"
-          className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm font-mono"
-          value={path}
-          onChange={(e) => setPath(e.target.value)}
-          placeholder="data/sample/acme"
+          type="file"
+          accept={UPLOAD_ACCEPT}
+          className="w-full text-sm"
+          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
         />
         <p className="text-xs text-slate-400 mt-1">
-          A path on the server's filesystem — not a file upload. The server
-          enforces the caller&apos;s clearance ceiling regardless of what is
-          entered below.
+          .txt, .md, .pdf or .pptx, up to 25 MB by default. The file is
+          redacted on the server before anything is stored. Its filename is
+          stored as-is and shown in citations, so keep sensitive details out
+          of it. Uploading a name that already exists in this engagement
+          replaces that document.
         </p>
       </div>
 
@@ -70,20 +71,25 @@ export function IngestPanel({ engagement }: { engagement: string | undefined }) 
           value={clearance}
           onChange={(e) => setClearance(Number(e.target.value))}
         />
+        <p className="text-xs text-slate-400 mt-1">
+          The server enforces the caller&apos;s clearance ceiling regardless of
+          what is entered here.
+        </p>
       </div>
 
       <button
         type="submit"
-        disabled={loading || !path.trim() || !engagement}
+        disabled={loading || !file || !engagement}
         className="rounded-md bg-slate-800 text-white text-sm px-4 py-1.5 disabled:opacity-50"
       >
-        {loading ? "Ingesting..." : "Ingest"}
+        {loading ? "Uploading..." : "Upload"}
       </button>
 
       {error ? <ErrorBanner error={error} /> : null}
-      {chunksIngested !== null ? (
+      {result !== null ? (
         <p className="text-sm text-emerald-700">
-          Ingested {chunksIngested} chunk{chunksIngested === 1 ? "" : "s"}.
+          Ingested {result.chunks} chunk{result.chunks === 1 ? "" : "s"} from{" "}
+          <span className="font-mono">{result.name}</span>.
         </p>
       ) : null}
     </form>

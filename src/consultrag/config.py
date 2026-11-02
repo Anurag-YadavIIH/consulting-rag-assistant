@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     # frontend dev; never trust a hardcoded origin in app code.
     cors_allowed_origins: str = ""
 
+    # Largest accepted POST /ingest/upload file, in MB (413 above it). The
+    # whole request still reaches the app before this check runs; a hard cap
+    # on request size belongs at the proxy/load balancer.
+    max_upload_mb: int = 25
+
     @property
     def cors_allowed_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]

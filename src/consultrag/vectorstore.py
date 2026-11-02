@@ -27,6 +27,16 @@ class StoredChunk:
     metadata: dict
 
 
+class DocumentReplaceForbidden(Exception):
+    """Raised by replace_document() when an existing chunk of the document has
+    a clearance above what the caller may replace. Carries no detail about the
+    existing document on purpose: callers must not learn its clearance or text."""
+
+
+def _is_document(metadata: dict, engagement: str, source_path: str) -> bool:
+    return metadata.get("engagement") == engagement and metadata.get("source_path") == source_path
+
+
 class NumpyVectorStore:
     def __init__(self, dim: int):
         self.dim = dim
@@ -49,6 +59,29 @@ class NumpyVectorStore:
             raise ValueError(f"expected dim {self.dim}, got {vectors.shape[1]}")
         self._vectors = np.vstack([self._vectors, vectors.astype(np.float32)])
         self._chunks.extend(chunks)
+
+    def replace_document(self, engagement: str, source_path: str, vectors: np.ndarray,
+                         chunks: list[StoredChunk],
+                         max_existing_clearance: int | None = None) -> None:
+        """Atomically swaps every chunk of one document (same engagement and
+        source_path) for `chunks`. If any existing chunk's clearance is above
+        `max_existing_clearance` (None = no limit, for admins), raises
+        DocumentReplaceForbidden and changes nothing. The new state is built
+        aside and assigned at the end, so a failure leaves the old version."""
+        if vectors.shape[0] != len(chunks):
+            raise ValueError("vectors and chunks length mismatch")
+        if vectors.shape[1] != self.dim:
+            raise ValueError(f"expected dim {self.dim}, got {vectors.shape[1]}")
+        existing = [c for c in self._chunks if _is_document(c.metadata, engagement, source_path)]
+        if max_existing_clearance is not None and any(
+            int(c.metadata.get("clearance", 1)) > max_existing_clearance for c in existing
+        ):
+            raise DocumentReplaceForbidden()
+        keep = [i for i, c in enumerate(self._chunks)
+                if not _is_document(c.metadata, engagement, source_path)]
+        new_vectors = np.vstack([self._vectors[keep], vectors.astype(np.float32)])
+        new_chunks = [self._chunks[i] for i in keep] + list(chunks)
+        self._vectors, self._chunks = new_vectors, new_chunks
 
     def search(self, query_vec: np.ndarray, top_k: int = 5, user=None) -> list[dict]:
         # `user` exists for interface parity with PgVectorStore.search(), which
