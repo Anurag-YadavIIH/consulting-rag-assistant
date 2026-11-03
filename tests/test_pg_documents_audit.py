@@ -315,3 +315,24 @@ def test_admin_activity_paginates_and_shows_ids_not_text(admin_client, store):
                              headers=_bearer(admin)).json()
     assert page2["events"][0]["document"] == "doc0.txt"
     assert admin_client.get("/admin/activity?limit=500", headers=_bearer(admin)).status_code == 422
+
+
+def test_admin_activity_filters_by_event_type(admin_client, store):
+    from consultrag.audit import insert_audit_event
+
+    user_id = _uid()
+    with store.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+        insert_audit_event(cur, {"event": "ingest", "user_id": user_id, "engagement": "acme",
+                                 "document": "f.txt", "n_chunks": 1, "redaction_counts": {}})
+        insert_audit_event(cur, {"event": "query", "user_id": user_id, "n_retrieved": 2, "n_blocked": 0})
+        insert_audit_event(cur, {"event": "delete", "user_id": user_id, "engagement": "acme",
+                                 "document": "f.txt", "n_chunks": 1})
+    admin = User.make("99", roles=["admin"], clearance=5)
+    for event in ("ingest", "query", "delete"):
+        body = admin_client.get(f"/admin/activity?event={event}&limit=200", headers=_bearer(admin)).json()
+        mine = [e for e in body["events"] if e["user_id"] == user_id]
+        assert [e["event"] for e in mine] == [event]
+        assert all(e["event"] == event for e in body["events"])
+    assert admin_client.get("/admin/activity?event=bogus", headers=_bearer(admin)).status_code == 422
+    member = User.make("7", roles=["analyst", "engagement:acme"], clearance=5)
+    assert admin_client.get("/admin/activity?event=query", headers=_bearer(member)).status_code == 403

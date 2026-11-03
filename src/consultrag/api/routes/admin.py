@@ -10,6 +10,8 @@ internal user ID only.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ...security.access import AccessPolicy, User
@@ -31,11 +33,12 @@ def _require_admin(user: User = Depends(get_current_app_user)) -> User:
 def activity(
     limit: int = Query(50, ge=1, le=MAX_PAGE),
     before: int | None = Query(None, ge=1),
+    event: Literal["ingest", "delete", "query"] | None = Query(None),
     _: User = Depends(_require_admin),
     audit=Depends(get_audit_log),
 ) -> ActivityResponse:
     # One extra row tells us whether an older page exists.
-    rows = audit.recent(limit=limit + 1, before=before)
+    rows = audit.recent(limit=limit + 1, before=before, event=event)
     page, more = rows[:limit], len(rows) > limit
     return ActivityResponse(
         events=[ActivityEvent(**r) for r in page],

@@ -195,16 +195,26 @@ class PgAuditLog:
             logger.error("audit write failed for a query event (%s); the query still succeeded",
                          type(e).__name__)
 
-    def recent(self, *, limit: int = 50, before: int | None = None) -> list[dict]:
-        """Newest first. `before` is the id to page back from (exclusive)."""
+    def recent(self, *, limit: int = 50, before: int | None = None,
+               event: str | None = None) -> list[dict]:
+        """Newest first. `before` is the id to page back from (exclusive);
+        `event` keeps only one event type."""
+        if event is not None and event not in AUDIT_EVENT_TYPES:
+            raise ValueError(f"unknown audit event type: {event!r}")
+        where: list[str] = []
+        params: dict = {"limit": limit}
+        if before is not None:
+            where.append("id < %(before)s")
+            params["before"] = before
+        if event is not None:
+            where.append("event = %(event)s")
+            params["event"] = event
         sql = (
             "SELECT id, ts, event, user_id, engagement, document, n_chunks, "
             "redaction_counts, n_retrieved, n_blocked FROM audit_events "
         )
-        params: dict = {"limit": limit}
-        if before is not None:
-            sql += "WHERE id < %(before)s "
-            params["before"] = before
+        if where:
+            sql += "WHERE " + " AND ".join(where) + " "
         sql += "ORDER BY id DESC LIMIT %(limit)s"
         with self._pool.connection() as conn, conn.cursor() as cur:
             cur.execute(sql, params)

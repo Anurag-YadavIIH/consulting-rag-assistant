@@ -35,11 +35,11 @@ function withMe(isAdmin: boolean, el: ReturnType<typeof createElement>) {
   );
 }
 
-it("Activity is a labelled placeholder for admins, with no rows", () => {
+it("Activity for admins starts loading real events and shows no invented rows", () => {
   const out = withMe(true, createElement(ActivityPage));
-  expect(out).toContain("Placeholder");
-  expect(out).not.toContain("<table");
-  expect(out).not.toContain("<li");
+  expect(out).toContain("Loading activity");
+  expect(out).not.toContain("<tbody");
+  expect(out).not.toContain("Placeholder");
 });
 
 it("Activity tells non-admins it's for administrators", () => {

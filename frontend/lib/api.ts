@@ -229,6 +229,23 @@ export function listDocuments(engagement: string): Promise<DocumentsResponse> {
   );
 }
 
+export function deleteDocument(engagement: string, name: string): Promise<DeleteDocumentResponse> {
+  const q = `engagement=${encodeURIComponent(engagement)}&name=${encodeURIComponent(name)}`;
+  return request<DeleteDocumentResponse>("DELETE", `/documents?${q}`);
+}
+
+export type ActivityEventType = ActivityEvent["event"];
+
+export function adminActivity(
+  opts: { limit?: number; before?: number | null; event?: ActivityEventType | null } = {}
+): Promise<ActivityResponse> {
+  const params = new URLSearchParams();
+  params.set("limit", String(opts.limit ?? 50));
+  if (opts.before) params.set("before", String(opts.before));
+  if (opts.event) params.set("event", opts.event);
+  return request<ActivityResponse>("GET", `/admin/activity?${params.toString()}`);
+}
+
 export function uploadDocument(
   file: File,
   engagement: string,

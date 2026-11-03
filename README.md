@@ -653,6 +653,15 @@ can't separate answerable from unanswerable questions on this corpus (see
 `BENCHMARKS.md`, 2026-11-03), so none is applied. A cross-encoder relevance
 score or a grounded generative model are possible future work.
 
+The **Documents** page lists the selected engagement's documents from
+`GET /documents` (only those the user can see at their clearance), deletes
+one after a confirmation dialog, and uploads with drag and drop. The
+**Activity** page (admins only; the server enforces it) pages through
+`GET /admin/activity`, newest first, with an event-type filter
+(`?event=ingest|delete|query`). The **sign-in** page states only what the
+code enforces: redaction before storage, separation by engagement and
+clearance, and a citation on every passage shown.
+
 The UI also has Light, Dark and System themes, self-hosted fonts (no runtime
 requests to Google) and a phone layout. `scripts/seed_demo_data.py` loads
 fictional demo engagements (Meridian Health, Kestrel Medical) into a **local**

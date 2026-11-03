@@ -44,6 +44,7 @@ const TEXT_PAIRS: Array<[TokenName, TokenName]> = [
   ["brandStrong", "panel"], ["brandStrong", "ground"],
   ["danger", "dangerBg"], ["danger", "panel"], ["danger", "raised"],
   ["ok", "okBg"],
+  ["panel", "danger"], // destructive confirm button
   ["sideText", "sideBg"], ["sideText", "sideRaised"],
   ["sideMuted", "sideBg"], ["sideMuted", "sideRaised"],
   ["accent", "sideBg"], // "RAG" in the sidebar wordmark

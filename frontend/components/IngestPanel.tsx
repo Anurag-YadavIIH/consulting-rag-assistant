@@ -14,7 +14,13 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function IngestPanel({ engagement }: { engagement: string | undefined }) {
+export function IngestPanel({
+  engagement,
+  onUploaded,
+}: {
+  engagement: string | undefined;
+  onUploaded?: () => void;
+}) {
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -47,6 +53,9 @@ export function IngestPanel({ engagement }: { engagement: string | undefined }) 
     try {
       const res = await uploadDocument(file, engagement, clearance);
       setResult({ chunks: res.chunks_ingested, name: res.source_name });
+      setFile(null);
+      if (inputRef.current) inputRef.current.value = "";
+      onUploaded?.();
     } catch (err) {
       setError(err);
     } finally {
@@ -156,8 +165,15 @@ export function IngestPanel({ engagement }: { engagement: string | undefined }) 
         <Button type="submit" disabled={loading || !file || !engagement} className="min-w-[8rem]">
           {loading ? "Uploading..." : "Upload"}
         </Button>
-        {loading ? <Spinner label="Uploading and indexing..." /> : null}
       </div>
+      {loading ? (
+        // The browser's fetch can't report upload progress, so this is an
+        // honest "working" indicator rather than a percentage.
+        <div className="space-y-1">
+          <progress aria-label="Uploading and indexing" className="block h-2 w-full max-w-md accent-accent" />
+          <Spinner label="Uploading, redacting and indexing. Large documents can take up to a minute." />
+        </div>
+      ) : null}
 
       {error ? <ErrorBanner error={error} /> : null}
       {result !== null ? (
