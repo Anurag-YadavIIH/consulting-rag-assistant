@@ -669,6 +669,47 @@ Compose database only; it refuses to run with `APP_ENV=production` or a
 non-local database. Tested locally with Docker Compose and in Chrome, **not on
 AWS**.
 
+### Team access (admins)
+
+Admins give people access in the app, on the **Team** page, without shell
+commands. Tested with unit tests and Docker Compose locally; **not tested on
+AWS**.
+
+- **First admin:** `INITIAL_ADMIN_EMAILS` (comma-separated). A listed
+  account becomes a global admin with clearance 3 the first time it signs in,
+  and only if Google reports the email as verified. It happens once per
+  account, so a later demotion sticks. The API logs it by user number, never
+  the email.
+- **Invitations:** an admin invites a Google account email (case doesn't
+  matter) with engagements and a clearance. It applies once, at that
+  person's first verified sign-in, and expires after `INVITATION_TTL_DAYS`
+  (default 14). No email is sent; share the app link.
+- **Role presets** are shortcuts: Analyst (clearance 1), Manager (2),
+  Senior management (3) and Admin (global admin, clearance 3). Only three
+  things control access: engagement membership, clearance and the global
+  admin role. Membership labels like "manager" grant nothing by themselves,
+  and admins are still limited by their clearance when reading documents.
+- **Optional domain rule:** `ALLOWED_EMAIL_DOMAINS` (comma-separated). When
+  set, other domains get a 403 at sign-in, except invited emails and
+  `INITIAL_ADMIN_EMAILS`. Refused accounts get no user record. A malformed
+  value (for either setting) makes the API refuse to start.
+- **Safety rules:** every `/admin` team route checks the admin role in the
+  token and again in the database. The last admin can't be removed or
+  demoted, admins can't remove their own admin rights or access, clearance
+  must be 1 to 5, and destructive actions ask for confirmation.
+- **When changes apply:** at the person's next token refresh at the latest.
+  Removing someone also revokes their refresh tokens (they must sign in
+  again, which gets them nothing), but **an access token that was already
+  issued can keep working for up to 15 minutes.**
+- **Audit:** every change is recorded in `audit_events` with the actor's
+  user number, the target user number or invitation number, the action,
+  engagement and clearance. No email addresses are stored there.
+
+`scripts/seed_authz.py` still works as a fallback (for example
+`--user-id 90 --admin --clearance 3`), and now refuses `--role admin` with
+`--engagement`, because an engagement membership labelled "admin" would be
+read as the global admin role.
+
 ### Static export
 
 `next.config.js` sets `output: "export"` and `trailingSlash: true`, so

@@ -14,8 +14,8 @@ The whole sequence, in order:
 5. Start the API
 6. Add the CloudFront URL to Google
 7. Deploy the frontend
-8. Sign in and note your user number
-9. Grant access (seed)
+8. Sign in (you're the first admin)
+9. Give the team access from the Team page
 10. Run the post-deploy checks
 11. Take screenshots
 12. Destroy
@@ -40,7 +40,21 @@ The load balancer no longer takes an IP allowlist; only CloudFront can reach it.
 allowed_cidrs = ["YOUR.IP/32"]
 ```
 
-Every other setting has a default (see `variables.tf`). `terraform.tfvars.example` shows the optional debug settings.
+Set the first admin in `infra\terraform\terraform.tfvars` (gitignored; the
+email is personal data and must never go into a committed file):
+
+```hcl
+initial_admin_emails = ["you@example.com"]
+```
+
+Optionally restrict sign-in to your organisation's domain (invited emails
+and the initial admin can still sign in):
+
+```hcl
+allowed_email_domains = ["example.com"]
+```
+
+Every other setting has a default (see `variables.tf`). `terraform.tfvars.example` shows the optional settings.
 
 ## 2. Apply with no containers
 
@@ -124,19 +138,40 @@ powershell -ExecutionPolicy Bypass -File scripts\deploy_frontend.ps1
 
 It stops with an error if any Terraform output is missing, if the build fails, if `out\index.html` is missing, or if the build still contains `localhost:8000`, before anything is uploaded. Wait a few minutes for the invalidation.
 
-## 8. Sign in and note your user number
+## 8. Sign in (you're the first admin)
 
-Open the `cloudfront_url` in Chrome and sign in with Google. A new database has no grants, so expect **"No access yet"** with your email and a **User #** number. Note the number. Don't share your email or Google subject ID; they aren't needed.
+Step 1 set `initial_admin_emails` to your Google account, so the first time
+you sign in with it (Google must report the email as verified) the account
+becomes a global admin with clearance 3. That happens once per account; the
+API logs it by user number only. Open the `cloudfront_url` and sign in. You
+should see the app with **Activity** and **Team** in the sidebar, and
+"Admin, clearance 3" under your name.
 
-## 9. Grant access (seed)
+## 9. Give the team access from the Team page
 
-The smallest grant the tests need is analyst in acme, at the default clearance of 1. In the PowerShell window from step 4 (replace `90` with your number):
+The database starts empty, so there are no engagements until documents are
+uploaded or someone is invited to one. On **Team**:
+
+- **Invite** each colleague by their Google account email, with a role
+  preset (Analyst 1, Manager 2, Senior management 3, Admin) and the
+  engagements they need. No email is sent: share the `cloudfront_url` with
+  them. The invitation applies once, at their first verified sign-in, and
+  expires after `invitation_ttl_days` (14 by default).
+- **Edit** or **Remove** people later. Changes reach them at their next
+  token refresh (within 15 minutes); removal also signs them out of new
+  sessions, but a page they already have open can keep working for up to 15
+  minutes.
+
+**Fallback (shell access):** if sign-in as the first admin doesn't work, the
+one-off Fargate task can still grant access by user number (shown in the
+sidebar after any sign-in). In the PowerShell window from step 4:
 
 ```powershell
-Invoke-OneOffTask @("python", "scripts/seed_authz.py", "--user-id", "90", "--engagement", "acme", "--role", "analyst")
+Invoke-OneOffTask @("python", "scripts/seed_authz.py", "--user-id", "90", "--admin", "--clearance", "3")
 ```
 
-Expect `exitCode: 0`; CloudWatch shows `Seeded user_id=90: analyst in acme.` and never an email. An unknown number fails with `exitCode: 1` and `no user with id ...`, granting nothing. Then reload the page: the refresh picks up the grant.
+Expect `exitCode: 0`; an unknown number fails with `exitCode: 1` and grants
+nothing.
 
 ## 10. Post-deploy checks
 
@@ -155,6 +190,7 @@ curl.exe -s -w " [%{http_code} %{content_type}]" -X POST -H "Content-Type: appli
 curl.exe -s -w " [%{http_code} %{content_type}]" -X POST "$u/auth/refresh"
 curl.exe -s -w " [%{http_code} %{content_type}]" -X POST -H "X-ConsultRAG-CSRF: 1" "$u/auth/refresh"
 curl.exe -s -o NUL -w "[%{http_code} %{content_type}]" "$u/docs"
+curl.exe -s -w " [%{http_code} %{content_type}]" "$u/admin/members"
 ```
 
 | # | Request | Expected |
@@ -166,6 +202,7 @@ curl.exe -s -o NUL -w "[%{http_code} %{content_type}]" "$u/docs"
 | A5 | `POST /auth/refresh`, no CSRF header | `403`, JSON `{"detail":"missing X-ConsultRAG-CSRF header"}` |
 | A6 | `POST /auth/refresh`, header, no cookie | `401`, JSON `{"detail":"not signed in"}` |
 | A7 | `/docs` | Not `200`: CloudFront sends it to S3, which answers `403` (XML). The API docs aren't public. |
+| A8 | `/admin/members` with no token | `401`, JSON. The Team routes reach the API and need a signed-in admin. |
 
 Static site and headers:
 

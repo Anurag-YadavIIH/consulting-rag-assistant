@@ -94,6 +94,7 @@ How it fits together:
 - **Load balancer:** the security group allows port 80 only from the AWS-managed CloudFront origin-facing prefix list. The listener's default action is a JSON 403; a rule forwards only requests carrying a random secret header that CloudFront adds (`X-Origin-Verify`), so other CloudFront distributions can't use it. The value lives only in Terraform state and the distribution config, and is never output. `debug_allowed_cidrs` (off by default, `/24` or narrower, never `0.0.0.0/0`) can temporarily open the security group to your IP.
 - **Security headers:** HSTS, `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy` and `Cross-Origin-Opener-Policy: same-origin-allow-popups` (Google's popup sign-in needs that value; plain `same-origin` breaks it). The Content-Security-Policy allows Google Identity Services and is **report-only** until the post-deploy checks show no reports; `csp_enforce = true` then enforces it.
 - **API settings:** `OAUTH_AUDIENCE` comes from `var.oauth_audience` (the Google client ID), with `APP_ENV=production` and `DEV_AUTH_BYPASS=false`.
+- **Team access:** `initial_admin_emails` (sensitive, set only in the gitignored `terraform.tfvars`), optional `allowed_email_domains` and `invitation_ttl_days` become the API's `INITIAL_ADMIN_EMAILS`, `ALLOWED_EMAIL_DOMAINS` and `INVITATION_TTL_DAYS`. The first admin signs in and gives everyone else access from the Team page, replacing the one-off Fargate seeding task (which stays as a fallback). Tested locally only.
 
 Known limitations of this design:
 

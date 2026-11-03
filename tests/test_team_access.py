@@ -408,3 +408,33 @@ def test_removal_revokes_refresh_and_audit_rows_hold_no_emails(api, repo):
     assert "access_removed" in actions and "invitation_created" in actions
     assert all("@" not in row for row in rows)
     assert f'"target_user_id":"{member}"' in actions.replace(" ", "")
+
+
+@needs_pg
+def test_admins_cant_demote_themselves_even_when_another_admin_exists(api, repo):
+    first = _user(repo, "a@example.test")
+    _make_admin(repo, first)
+    second = _user(repo, "b@example.test")
+    _make_admin(repo, second)
+    r = api.patch(f"/admin/members/{first}", headers=_bearer(repo, first), json={"is_admin": False})
+    assert r.status_code == 409 and "your own admin" in r.json()["detail"]
+    assert "admin" in repo.build_user(first).roles
+
+
+@needs_pg
+def test_service_level_guards_hold_without_the_api_layer(repo):
+    # Defense in depth: the service refuses these even if a caller skips the
+    # API's own validation.
+    from consultrag.authz.team import TeamError, update_member
+
+    only = _user(repo, "only@example.test")
+    _make_admin(repo, only)
+    with pytest.raises(TeamError) as e:
+        update_member(repo.conn, "system", only, is_admin=False)
+    assert e.value.status == 409 and "last admin" in e.value.message
+
+    member = _user(repo, "m@example.test")
+    with pytest.raises(TeamError) as e:
+        update_member(repo.conn, "system", member, engagements=[{"engagement": "acme", "role": "admin"}])
+    assert e.value.status == 422
+    assert "admin" not in repo.build_user(member).roles

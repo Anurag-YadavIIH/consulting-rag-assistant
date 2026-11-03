@@ -114,7 +114,7 @@ fine-tuning — see §13. These are deliberate roadmap items, not omissions.
 | **Outbound Sanitizer** | Strips engagement names and redaction terms from queries before they reach the web. |
 | **Live Search Provider** | Tavily by default; returns dated, recency-filtered passages. Interface allows Exa/Brave swap. |
 | **Result Merger + Synthesizer** | Unifies internal + external context tagged by source type and date; produces a grounded answer with per-claim citations and staleness flags. |
-| **Access Control** | Engagement isolation + clearance, enforced at the DB query layer with an in-process policy backstop. |
+| **Access Control** | Engagement isolation + clearance, enforced at the DB query layer with an in-process policy backstop. Admins manage access in the app (Team page): invitations by email, role presets over engagement and clearance, a first admin from `INITIAL_ADMIN_EMAILS`, every change audited without emails. |
 | **Audit Log** | Append-only record of every ingest and query (who, what, when; redaction counts; what was stripped from outbound queries). The API writes it to the `audit_events` table in Postgres with no question text, chunk text or emails; the CLI writes a local file. |
 | **Evaluation** | Retrieval metrics (hit@k, recall@k, MRR) + RAGAS-style faithfulness and answer relevancy against a golden set. |
 | **Observability** | Langfuse traces: query, retrieved ids + scores, latency, token/cost. |

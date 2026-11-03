@@ -91,8 +91,18 @@ it("team client calls use the admin paths and handle an empty 204", async () => 
   const api = await import("../lib/api");
   await expect(api.revokeInvitation(5)).resolves.toBeUndefined();
   await api.updateMember("7", { clearance: 2 });
+  await api.listMembers();
+  await api.removeMember("8");
+  await api.listInvitations();
+  await api.createInvitation({ email: "x@example.test", engagements: ["acme"], role: "analyst", clearance: 1, is_admin: false });
+  await api.listEngagements();
   expect(calls.map((c) => `${c.init.method} ${c.url.replace("http://localhost:8000", "")}`)).toEqual([
     "DELETE /admin/invitations/5",
     "PATCH /admin/members/7",
+    "GET /admin/members",
+    "DELETE /admin/members/8",
+    "GET /admin/invitations",
+    "POST /admin/invitations",
+    "GET /admin/engagements",
   ]);
 });
