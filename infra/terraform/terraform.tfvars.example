@@ -1,2 +1,14 @@
-# Copy to terraform.tfvars. Find your public IP with: curl.exe -s https://checkip.amazonaws.com
-allowed_cidrs = ["YOUR.PUBLIC.IP.HERE/32"]
+# Copy to terraform.tfvars (gitignored) only if you need to change a default.
+# Everything has a working default; the load balancer accepts only CloudFront.
+
+# Temporary direct access to the load balancer for debugging. Off by default.
+# Find your public IP with: curl.exe -s https://checkip.amazonaws.com
+# Remove this line (and re-apply) as soon as you're done.
+# debug_allowed_cidrs = ["YOUR.PUBLIC.IP.HERE/32"]
+# Only opens the security group: a direct request then gets the listener's 403.
+# To actually reach the API directly, also set:
+# debug_bypass_origin_check = true
+
+# Enforce the Content-Security-Policy instead of report-only. Only after the
+# post-deploy checks show no CSP reports in the browser console.
+# csp_enforce = true

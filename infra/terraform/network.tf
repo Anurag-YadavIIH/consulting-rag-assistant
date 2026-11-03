@@ -56,16 +56,34 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
+# CloudFront's origin-facing servers, as an AWS-managed prefix list. It counts
+# as about 55 rules against the security group's default limit of 60.
+data "aws_ec2_managed_prefix_list" "cloudfront" {
+  name = "com.amazonaws.global.cloudfront.origin-facing"
+}
+
 resource "aws_security_group" "alb" {
   name_prefix = "${var.project}-alb-"
-  description = "Load balancer: HTTP from allowed IPs only"
+  description = "Load balancer: HTTP from CloudFront only (plus optional debug IPs)"
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = var.allowed_cidrs
+    description     = "CloudFront origin-facing servers"
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    prefix_list_ids = [data.aws_ec2_managed_prefix_list.cloudfront.id]
+  }
+
+  dynamic "ingress" {
+    for_each = length(var.debug_allowed_cidrs) > 0 ? [1] : []
+    content {
+      description = "Temporary debug access; remove debug_allowed_cidrs when done"
+      from_port   = 80
+      to_port     = 80
+      protocol    = "tcp"
+      cidr_blocks = var.debug_allowed_cidrs
+    }
   }
 
   egress {

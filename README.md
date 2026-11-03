@@ -80,6 +80,8 @@ I deployed the API to AWS with **Terraform, Docker, ECR, ECS Fargate, an Applica
 
 It isn't a public demo yet: HTTPS, the frontend, sign-in and document ingestion aren't deployed or tested on AWS, and I shut the environment down after testing to control cost. Details, evidence and limitations are in [docs/aws-deployment.md](docs/aws-deployment.md).
 
+**Planned, untested on AWS:** Terraform for hosting the frontend in a private S3 bucket behind CloudFront, with the API on the same HTTPS URL and the load balancer reachable only from CloudFront. It passes `terraform validate` but hasn't been applied. The rebuild steps and post-deploy checks are in [docs/aws-frontend-runbook.md](docs/aws-frontend-runbook.md), and `scripts/deploy_frontend.ps1` builds and uploads the frontend.
+
 ## Quickstart
 
 ```bash

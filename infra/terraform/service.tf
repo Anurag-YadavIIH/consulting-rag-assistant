@@ -74,6 +74,9 @@ resource "aws_ecs_task_definition" "api" {
     image        = "${aws_ecr_repository.api.repository_url}:${var.image_tag}"
     essential    = true
     portMappings = [{ containerPort = 8000, protocol = "tcp" }]
+    # CORS_ALLOWED_ORIGINS is deliberately unset (no browser origin
+    # allowed): the frontend is served from the same CloudFront origin as
+    # the API, so the browser never makes a cross-origin call.
     environment = [
       { name = "APP_ENV", value = "production" },
       { name = "DEV_AUTH_BYPASS", value = "false" },
@@ -99,6 +102,12 @@ resource "aws_lb" "api" {
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
   subnets            = aws_subnet.public[*].id
+
+  # Must outlast CloudFront's origin response timeout: during a long upload
+  # no bytes flow until the API answers, and the load balancer would
+  # otherwise cut the connection first. (The container's keep-alive, set in
+  # docker/api/Dockerfile, is longer again, as AWS recommends.)
+  idle_timeout = var.api_origin_read_timeout + 10
 }
 
 resource "aws_lb_target_group" "api" {
@@ -125,9 +134,54 @@ resource "aws_lb_listener" "http" {
   port              = 80
   protocol          = "HTTP"
 
+  # Anything that doesn't match a rule below is refused. Health checks go
+  # from the load balancer to the containers and aren't affected.
   default_action {
+    type = "fixed-response"
+    fixed_response {
+      content_type = "application/json"
+      message_body = "{\"detail\":\"Forbidden\"}"
+      status_code  = "403"
+    }
+  }
+}
+
+# Only requests carrying this distribution's secret origin header are
+# forwarded, so other CloudFront distributions (which share the same
+# origin-facing IP ranges) can't use the load balancer.
+resource "aws_lb_listener_rule" "from_cloudfront" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 10
+
+  action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.api.arn
+  }
+
+  condition {
+    http_header {
+      http_header_name = local.origin_verify_header
+      values           = [random_password.origin_verify.result]
+    }
+  }
+}
+
+# Temporary direct access for debugging, only while debug_allowed_cidrs is set
+# AND debug_bypass_origin_check is true.
+resource "aws_lb_listener_rule" "debug_ips" {
+  count        = length(var.debug_allowed_cidrs) > 0 && var.debug_bypass_origin_check ? 1 : 0
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 20
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.api.arn
+  }
+
+  condition {
+    source_ip {
+      values = var.debug_allowed_cidrs
+    }
   }
 }
 
@@ -151,5 +205,5 @@ resource "aws_ecs_service" "api" {
     container_port   = 8000
   }
 
-  depends_on = [aws_lb_listener.http, aws_iam_role_policy_attachment.task_execution]
+  depends_on = [aws_lb_listener_rule.from_cloudfront, aws_iam_role_policy_attachment.task_execution]
 }

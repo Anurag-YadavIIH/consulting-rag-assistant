@@ -28,4 +28,7 @@ RUN useradd --create-home --uid 1000 appuser && chown -R appuser /app
 USER appuser
 
 EXPOSE 8000
-CMD ["uvicorn", "consultrag.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Keep-alive longer than the load balancer's idle timeout (at most 130 s, see
+# infra/terraform/service.tf), as AWS recommends; uvicorn's 5 s default lets
+# the load balancer reuse a connection the app just closed, giving a 502.
+CMD ["uvicorn", "consultrag.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-keep-alive", "150"]

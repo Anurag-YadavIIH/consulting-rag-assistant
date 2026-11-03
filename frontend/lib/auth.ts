@@ -23,7 +23,7 @@
  * Tokens are never logged or written to browser storage.
  */
 
-import { API_BASE_URL, GOOGLE_CLIENT_ID } from "./config";
+import { API_BASE_URL, API_LOCATION_LABEL, GOOGLE_CLIENT_ID } from "./config";
 
 /** Must match CSRF_HEADER in src/consultrag/api/routes/auth.py. The cookie
  * routes reject requests without it. */
@@ -76,7 +76,7 @@ export async function loginWithGoogleCredential(idToken: string): Promise<void> 
       credentials: "include",
     });
   } catch {
-    throw new LoginError(0, `Can't reach the API at ${API_BASE_URL}.`);
+    throw new LoginError(0, `Can't reach ${API_LOCATION_LABEL}.`);
   }
   if (!res.ok) {
     // The API's detail can describe why verification failed; it never

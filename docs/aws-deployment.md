@@ -2,7 +2,7 @@
 
 I deployed ConsultRAG's FastAPI backend to AWS on 2 November 2026 to learn how a containerised ML service runs in the cloud. The whole environment is defined in Terraform, so I can build it, test it and destroy it to control cost.
 
-**Status:** the API and database ran successfully on AWS. It is not a public demo yet: there is no frontend, HTTPS or browser sign-in on AWS, and access was limited to my own IP address. I shut it down after testing, so there is no live URL.
+**Status:** the API and database ran successfully on AWS. It is not a public demo yet: there is no frontend, HTTPS or browser sign-in on AWS, and access was limited to my own IP address. I shut it down after testing, so there is no live URL. Hosting the frontend on S3 and CloudFront, with browser sign-in on one HTTPS URL, is written in Terraform but not yet applied or tested (see "Planned: frontend on S3 and CloudFront").
 
 ## Architecture
 
@@ -59,45 +59,59 @@ I estimate about $0.10 to $0.13 an hour while running. I used AWS credits and ra
 
 ## Current limitations
 
-- No HTTPS, frontend or browser sign-in on AWS. Google sign-in now works in the frontend locally (Docker Compose and the static export on `http://localhost:3000`), but none of it has been deployed or tested on AWS. The steps it would need are listed under "Future step: frontend and sign-in on AWS" below.
-- This deployment doesn't set `OAUTH_AUDIENCE`. With the current code the API still starts, logs a warning, and rejects every `POST /auth/login`. The `refresh_version` column that sign-out uses is added automatically the first time the API or `scripts/migrate_authz.py` connects.
-- Document upload (`POST /ingest/upload`) was added after this deployment. It works with Docker Compose locally but hasn't been deployed or tested on AWS. The path-based `/ingest` now returns 404 unless `APP_ENV` is `development` or `dev`.
+- No frontend, HTTPS or browser sign-in on AWS yet. Google sign-in works in the frontend locally (Docker Compose and the static export on `http://localhost:3000`). Hosting the frontend on S3 and CloudFront is written in Terraform but **not applied or tested on AWS**; see "Planned: frontend on S3 and CloudFront" below.
+- Document upload (`POST /ingest/upload`) works with Docker Compose locally but hasn't been deployed or tested on AWS. The path-based `/ingest` returns 404 unless `APP_ENV` is `development` or `dev`.
 - After an upload, only the API process that handled it refreshes its in-memory keyword (BM25) index. Other processes find new documents through vector search only until they restart. This deployment runs one task, but running more than one needs a shared fix first, such as keyword search in Postgres or a refresh signal between tasks.
-- FastAPI receives a whole upload before checking its size, so an oversized file still arrives before the 413 is returned. A request size cap at the load balancer would be needed.
+- FastAPI receives a whole upload before checking its size, so an oversized file still arrives before the 413 is returned.
 - Terraform state is stored on my laptop, and deployments are manual, with no CI/CD yet.
 - The database is a single instance with no backups, because this is a learning environment holding no real data.
 - This setup is not reviewed for real client or patient data.
 
-## Future step: frontend and sign-in on AWS
+## Planned: frontend on S3 and CloudFront (untested on AWS)
 
-Not done, and not tested. This is what the sign-in design needs from AWS.
+**Status:** the Terraform in `infra/terraform/frontend.tf` (with changes to `network.tf`, `service.tf`, `variables.tf` and `outputs.tf`) passes `terraform fmt` and `terraform validate`. It has not been planned or applied. The step-by-step rebuild, including the post-deploy checks, is in [aws-frontend-runbook.md](aws-frontend-runbook.md).
 
-The refresh token is a `Secure`, `SameSite=Strict` cookie on `Path=/auth`, so the browser must see the frontend and the API as the same site, over HTTPS. The simplest way is one CloudFront distribution in front of both:
+```text
+Browser ── HTTPS ──▶ CloudFront (default *.cloudfront.net domain, PriceClass_200)
+                       │                                  │
+         default (*)   │ Origin Access Control            │ /auth/*, /me, /query, /draft,
+         + function    ▼                                  │ /ingest, /ingest/*, /health
+              S3 bucket (private, static export)          │ HTTP + secret origin header
+                                                          ▼
+                         Application Load Balancer (only CloudFront's IP ranges allowed;
+                         listener forwards only requests carrying the secret header)
+                                                          │
+                                                          ▼
+                                            ECS Fargate API ── RDS, Secrets Manager
+```
 
-- **Origins:** the S3 bucket holding `frontend/out/` (with origin access control), and the API's load balancer.
-- **Default behavior (`*`):** the S3 origin, normal caching. S3 doesn't resolve folder index files, so a CloudFront Function must rewrite paths ending in `/` to `.../index.html` (the export uses `trailingSlash`, for example `/management/` maps to `management/index.html`).
-- **API behaviors, routed to the load balancer:** `/auth/*`, `/me`, `/query`, `/draft`, `/ingest/*` and `/health`. For each:
-  - Allowed methods: GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE.
-  - Caching disabled (the managed `CachingDisabled` policy).
-  - An origin request policy that forwards all viewer headers except `Host` (the managed `AllViewerExceptHostHeader`), so these reach the API: `Authorization` (the access token, and the Google ID token at login), `Content-Type` (including multipart uploads), `X-ConsultRAG-CSRF`, `Origin`, and the `Cookie` header carrying `consultrag_refresh`. Check against the current AWS documentation when building this, because CloudFront treats `Authorization` specially.
-  - Response headers, including `Set-Cookie` from `/auth/login` and `/auth/logout`, must pass through unchanged.
-- **Viewer protocol:** redirect HTTP to HTTPS. The cookie is `Secure`, so sign-in doesn't work over plain HTTP outside `localhost`.
-- **CloudFront to the load balancer:** the load balancer is HTTP-only today, which would leave that leg unencrypted. Add an HTTPS listener (an ACM certificate), and allow traffic only from CloudFront (its managed prefix list plus a secret custom header the load balancer checks).
+How it fits together:
 
-Settings that go with it:
+- **One origin.** The browser loads the app and calls the API on the same CloudFront URL, so the refresh cookie (`Secure`, `SameSite=Strict`, `Path=/auth`) stays first-party and the API needs no CORS (`CORS_ALLOWED_ORIGINS` stays unset). The frontend is built with `NEXT_PUBLIC_API_BASE_URL=/`, which means relative API paths.
+- **S3:** a private bucket with all public access blocked, readable only by this distribution through Origin Access Control. `force_destroy` lets `terraform destroy` remove it with files in it.
+- **Static paths:** a CloudFront Function on the S3 behavior only maps `/management/` and `/management` to `management/index.html`. There are no distribution-wide custom error responses, because those would turn the API's JSON 401, 403, 404 and 409 into HTML.
+- **API behaviors:** the exact API paths go to the load balancer with all HTTP methods, the managed `CachingDisabled` cache policy and the managed `AllViewerExceptHostHeader` origin request policy, which forwards `Authorization`, `X-ConsultRAG-CSRF`, all cookies and all query strings, but not the viewer's `Host`. FastAPI's `/docs`, `/redoc` and `/openapi.json` aren't routed, so they aren't public. A test checks the path list against the app's real routes.
+- **Load balancer:** the security group allows port 80 only from the AWS-managed CloudFront origin-facing prefix list. The listener's default action is a JSON 403; a rule forwards only requests carrying a random secret header that CloudFront adds (`X-Origin-Verify`), so other CloudFront distributions can't use it. The value lives only in Terraform state and the distribution config, and is never output. `debug_allowed_cidrs` (off by default, `/24` or narrower, never `0.0.0.0/0`) can temporarily open the security group to your IP.
+- **Security headers:** HSTS, `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy` and `Cross-Origin-Opener-Policy: same-origin-allow-popups` (Google's popup sign-in needs that value; plain `same-origin` breaks it). The Content-Security-Policy allows Google Identity Services and is **report-only** until the post-deploy checks show no reports; `csp_enforce = true` then enforces it.
+- **API settings:** `OAUTH_AUDIENCE` comes from `var.oauth_audience` (the Google client ID), with `APP_ENV=production` and `DEV_AUTH_BYPASS=false`.
 
-- Build the frontend with `NEXT_PUBLIC_API_BASE_URL` set to the CloudFront URL (`https://<distribution>`), and `NEXT_PUBLIC_GOOGLE_CLIENT_ID` set to the OAuth client ID.
-- On the API task: `OAUTH_AUDIENCE` set to the same client ID, `CORS_ALLOWED_ORIGINS` set to the CloudFront URL (requests are same-origin then, but this keeps the allowlist explicit), `APP_ENV=production`, and `DEV_AUTH_BYPASS` unset or false.
-- In Google Cloud Console, add `https://<distribution>` (or the custom domain) as an authorized JavaScript origin.
+Known limitations of this design:
+
+- **CloudFront to the load balancer is HTTP.** Viewers always use HTTPS, but the hop from CloudFront to the load balancer inside AWS's network is unencrypted, because the load balancer has no certificate without a custom domain. Requests on that hop include access tokens and the refresh cookie. The production option is a custom domain with an ACM certificate on an HTTPS listener (and `origin_protocol_policy = "https-only"`), or a CloudFront VPC origin with an internal load balancer.
+- **Upload processing time.** CloudFront waits `api_origin_read_timeout` seconds (60 by default; 30 is CloudFront's default and 120 the maximum without a quota increase) and doesn't retry a POST that times out; the viewer gets a 504. The load balancer's idle timeout is set 10 seconds longer, and the container's keep-alive (150 seconds) longer again, as AWS recommends. Embedding on the 1 vCPU container ran at about 3 chunks a second (about 150 seconds per MB of extracted text) in a local benchmark inside the API image limited to one CPU, so roughly 60 to 70 dense pages fit in 60 seconds. A text-heavy file near the 25 MB upload limit won't finish in time; the frontend then shows a timeout message, and the API may still finish storing the document.
+- **Unknown static paths** such as `/nope/` return S3's `403` XML page, because there's no distribution-wide error page.
+- **The CloudFront prefix list** counts as about 55 of the security group's default 60 rules.
+- **Cost (estimate).** CloudFront's always-free tier includes 1 TB of transfer, 10 million requests and 2 million function invocations a month, and the static site is about 1 MB in S3, so personal use should add close to $0 a month on top of the running cost above. This is an estimate, not a measured bill.
 
 ## Rebuild it
 
 Requires AWS CLI v2, Terraform, Docker and an AWS profile named `consultrag`. Commands are for Windows PowerShell. Running this creates billable resources.
 
+With the planned frontend hosting, follow [aws-frontend-runbook.md](aws-frontend-runbook.md) instead: it covers the whole order from credits to destroy. The steps below are the original API-only rebuild.
+
 ```powershell
 cd infra\terraform
 terraform init
-Copy-Item terraform.tfvars.example terraform.tfvars   # then add your public IP
 terraform apply
 ```
 
