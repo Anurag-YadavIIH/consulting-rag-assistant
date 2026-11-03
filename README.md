@@ -519,6 +519,10 @@ and renders no app data until there's a session. All of the auth logic is in
 - On a 401 the frontend refreshes once and retries the request once. A
   reload recovers the session the same way. If the refresh fails, it goes
   back to the sign-in screen.
+- A failed refresh always returns the same 401 (`not signed in`), so callers
+  can't tell why. The API logs only a category at INFO level
+  (`missing_cookie`, `expired`, `revoked`, `invalid` or `unknown_user`),
+  never the token, its claims, the email or the secret.
 - Every refresh re-reads roles and clearance from Postgres, so a granted or
   removed role takes effect at the next refresh (at most 15 minutes).
 - **Sign out** revokes on the server, not just in this browser: the API

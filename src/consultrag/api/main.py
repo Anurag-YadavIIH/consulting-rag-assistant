@@ -28,6 +28,21 @@ logger = logging.getLogger(__name__)
 API_VERSION = "0.2.0"
 
 
+def _configure_app_logging() -> None:
+    # uvicorn configures only its own loggers. Without this, the app's INFO
+    # messages (such as why a refresh was rejected) never reach the
+    # container log. Messages still propagate, so pytest's caplog sees them.
+    app_logger = logging.getLogger("consultrag")
+    if not app_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s:     %(name)s: %(message)s"))
+        app_logger.addHandler(handler)
+    app_logger.setLevel(logging.INFO)
+
+
+_configure_app_logging()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Fail closed: refuse to start with no/placeholder signing secret unless

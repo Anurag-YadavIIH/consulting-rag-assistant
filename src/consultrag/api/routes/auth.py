@@ -14,6 +14,8 @@ origins pass; SameSite=Strict is the second layer.
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response
 
 from ...auth.app_token import (
@@ -29,7 +31,13 @@ from ...config import settings
 from ..deps import get_authz_repo, get_oidc_verifier
 from ..schemas import LoginResponse, RefreshResponse
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# Same body for every refresh failure, so callers can't tell an expired
+# token from a revoked or forged one. The reason goes to the server log.
+REFRESH_FAILED_DETAIL = "not signed in"
 
 REFRESH_COOKIE = "consultrag_refresh"
 REFRESH_COOKIE_PATH = "/auth"
@@ -84,12 +92,19 @@ def refresh(
     repo: AuthzRepository = Depends(get_authz_repo),
 ) -> RefreshResponse:
     if not refresh_token:
-        raise HTTPException(status_code=401, detail="not signed in")
+        _log_refresh_rejected("missing_cookie")
+        raise HTTPException(status_code=401, detail=REFRESH_FAILED_DETAIL)
     try:
         new_access = refresh_app_token(refresh_token, settings.app_jwt_secret, repo)
     except AppTokenError as e:
-        raise HTTPException(status_code=401, detail=str(e)) from e
+        _log_refresh_rejected(e.reason)
+        raise HTTPException(status_code=401, detail=REFRESH_FAILED_DETAIL) from None
     return RefreshResponse(access_token=new_access)
+
+
+def _log_refresh_rejected(reason: str) -> None:
+    # Category only: never the token, its claims, the email or the secret.
+    logger.info("refresh rejected: reason=%s", reason)
 
 
 @router.post("/logout", status_code=204, dependencies=[Depends(_require_csrf_header)])

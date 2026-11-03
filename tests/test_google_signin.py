@@ -38,6 +38,7 @@ from consultrag.api.main import add_cors, app
 from consultrag.api.routes.auth import CSRF_HEADER, REFRESH_COOKIE
 from consultrag.auth.app_token import (
     AppTokenError,
+    issue_app_token,
     issue_refresh_token,
     refresh_app_token,
     verify_app_token,
@@ -398,3 +399,79 @@ def test_credentialed_cors_only_for_configured_origins():
     assert "access-control-allow-origin" not in bad.headers
     simple = c.post("/auth/refresh", headers={"Origin": "https://evil.example.test"})
     assert "access-control-allow-origin" not in simple.headers
+
+
+# --- failed refresh: safe reason in the log, generic 401 to the caller ---------
+
+
+def _refresh_capturing_logs(client, caplog, cookie=None):
+    headers = {CSRF_HEADER: "1"}
+    if cookie is not None:
+        headers["Cookie"] = f"{REFRESH_COOKIE}={cookie}"
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="consultrag"):
+        resp = client.post("/auth/refresh", headers=headers)
+    return resp
+
+
+def _assert_safe_rejection(resp, caplog, reason, *, token=None):
+    assert resp.status_code == 401
+    assert resp.json() == {"detail": "not signed in"}  # identical for every reason
+    lines = [r.getMessage() for r in caplog.records if r.name == "consultrag.api.routes.auth"]
+    assert lines == [f"refresh rejected: reason={reason}"]
+    logged = caplog.text + " ".join(str(r.args) for r in caplog.records)
+    for forbidden in filter(None, (token, SECRET, "person@example.com", "google-sub-1")):
+        assert forbidden not in logged
+
+
+def test_failed_refresh_logs_missing_cookie(api, caplog):
+    client, _ = api
+    _assert_safe_rejection(_refresh_capturing_logs(client, caplog), caplog, "missing_cookie")
+
+
+def test_failed_refresh_logs_expired(api, caplog):
+    client, _ = api
+    _login(client)  # creates user 1
+    expired = issue_refresh_token(User.make("1", roles=[]), SECRET, expires_in=-60)
+    resp = _refresh_capturing_logs(client, caplog, expired)
+    _assert_safe_rejection(resp, caplog, "expired", token=expired)
+
+
+def test_failed_refresh_logs_revoked(api, caplog):
+    client, _ = api
+    cookie = _refresh_cookie_from(_login(client))
+    _post_with_cookie(client, "/auth/logout", cookie)
+    resp = _refresh_capturing_logs(client, caplog, cookie)
+    _assert_safe_rejection(resp, caplog, "revoked", token=cookie)
+
+
+@pytest.mark.parametrize("kind", ["garbage", "wrong_secret", "access_token"])
+def test_failed_refresh_logs_invalid(api, caplog, kind):
+    client, _ = api
+    _login(client)
+    user = User.make("1", roles=[])
+    if kind == "garbage":
+        token = "not-a-jwt-at-all"
+    elif kind == "wrong_secret":
+        token = issue_refresh_token(user, "some-other-secret-0123456789abcdef")
+    else:  # an access token presented as a refresh token
+        token = issue_app_token(user, SECRET)
+    resp = _refresh_capturing_logs(client, caplog, token)
+    _assert_safe_rejection(resp, caplog, "invalid", token=token)
+
+
+def test_failed_refresh_logs_unknown_user(api, caplog):
+    client, repo = api
+    cookie = _refresh_cookie_from(_login(client))
+    del repo.authz[1]
+    resp = _refresh_capturing_logs(client, caplog, cookie)
+    _assert_safe_rejection(resp, caplog, "unknown_user", token=cookie)
+
+
+def test_successful_refresh_logs_no_rejection(api, caplog):
+    client, _ = api
+    cookie = _refresh_cookie_from(_login(client))
+    resp = _refresh_capturing_logs(client, caplog, cookie)
+    assert resp.status_code == 200
+    assert not [r for r in caplog.records if "refresh rejected" in r.getMessage()]
+    assert cookie not in caplog.text and resp.json()["access_token"] not in caplog.text

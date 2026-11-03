@@ -51,7 +51,15 @@ MIN_SECRET_LENGTH = 16
 
 class AppTokenError(Exception):
     """An app token failed verification for any reason. Callers should treat
-    this uniformly as a 401, same convention as OIDCError."""
+    this uniformly as a 401, same convention as OIDCError.
+
+    `reason` is a coarse, safe category for server logs: "expired",
+    "revoked", "invalid" or "unknown_user". It never contains the token,
+    its claims or anything about the user."""
+
+    def __init__(self, message: str, *, reason: str = "invalid"):
+        super().__init__(message)
+        self.reason = reason
 
 
 @dataclass
@@ -109,6 +117,8 @@ def verify_app_token(token: str, secret: str, *, expected_type: str = "access") 
         claims = jwt.decode(
             token, secret, algorithms=[ALGORITHM], options={"require": ["exp", "iat", "sub"]}
         )
+    except jwt.ExpiredSignatureError as e:
+        raise AppTokenError(str(e), reason="expired") from e
     except jwt.PyJWTError as e:
         raise AppTokenError(str(e)) from e
     if claims.get("type") != expected_type:
@@ -140,11 +150,16 @@ def _refresh_token_user_id(refresh_token: str, secret: str, authz_repo: AuthzRep
     claims = verify_app_token(refresh_token, secret, expected_type="refresh")
     try:
         user_id = int(claims["sub"])
+    except ValueError as e:
+        raise AppTokenError("refresh token subject is not a user id") from e
+    try:
         current = authz_repo.refresh_version(user_id)
     except ValueError as e:
-        raise AppTokenError("refresh token does not match a known user") from e
+        raise AppTokenError(
+            "refresh token does not match a known user", reason="unknown_user"
+        ) from e
     if claims.get("ver") != current:
-        raise AppTokenError("refresh token has been revoked")
+        raise AppTokenError("refresh token has been revoked", reason="revoked")
     return user_id
 
 
@@ -157,7 +172,9 @@ def refresh_app_token(refresh_token: str, secret: str, authz_repo: AuthzReposito
     try:
         user = authz_repo.build_user(user_id)
     except ValueError as e:
-        raise AppTokenError("refresh token does not match a known user") from e
+        raise AppTokenError(
+            "refresh token does not match a known user", reason="unknown_user"
+        ) from e
     return issue_app_token(user, secret)
 
 
