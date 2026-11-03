@@ -45,7 +45,7 @@ const member: MeResponse = {
 const unknownAccount: MeResponse = {
   user_id: "4", engagements: [], is_admin: false, clearance: 1, email: "new@example.com",
 };
-const admin: MeResponse = { user_id: "5", engagements: [], is_admin: true, clearance: 5 };
+const admin: MeResponse = { user_id: "5", engagements: [], is_admin: true, clearance: 3 };
 
 it("the prerendered page (before any login or /me) contains no page content", () => {
   const html = renderToStaticMarkup(createElement(AppShell, null, child));

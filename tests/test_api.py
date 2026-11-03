@@ -98,7 +98,7 @@ def _acme_user(clearance: int = 2) -> User:
 
 
 def _admin_user() -> User:
-    return User.make("99", roles=["admin"], clearance=5)
+    return User.make("99", roles=["admin"], clearance=3)
 
 
 # --- authentication gate: 401s ------------------------------------------------
@@ -212,7 +212,7 @@ def test_ingest_above_own_clearance_returns_403(client, dev_env):
     user = _acme_user(clearance=1)
     resp = client.post(
         "/ingest",
-        json={"path": "data/sample/acme_research.txt", "engagement": "acme", "clearance": 5},
+        json={"path": "data/sample/acme_research.txt", "engagement": "acme", "clearance": 3},
         headers=_bearer(user),
     )
     assert resp.status_code == 403
@@ -261,23 +261,34 @@ def test_spoofed_clearance_in_ingest_body_is_rejected(client, dev_env):
     user = _acme_user(clearance=1)
     resp = client.post(
         "/ingest",
-        json={"path": "data/sample/acme_research.txt", "engagement": "acme", "clearance": 99},
+        json={"path": "data/sample/acme_research.txt", "engagement": "acme", "clearance": 2},
         headers=_bearer(user),
     )
     assert resp.status_code == 403
 
 
+@pytest.mark.parametrize("clearance", [0, 4, 5, 99])
+def test_path_ingest_clearance_outside_one_to_three_is_422(client, dev_env, clearance):
+    # Even an admin (clearance 3) cannot label content outside the levels in use.
+    resp = client.post(
+        "/ingest",
+        json={"path": "data/sample/acme_research.txt", "engagement": "acme", "clearance": clearance},
+        headers=_bearer(_admin_user()),
+    )
+    assert resp.status_code == 422
+
+
 def test_spoofed_engagement_and_clearance_together_are_both_rejected(client, dev_env):
     # Single request spoofing BOTH fields at once: the token says clearance=1
     # and membership in "acme" only; the body claims "globex" (not held) AND
-    # clearance=99 (above the token's own). The server rejects outright — it
+    # clearance=3 (above the token's own). The server rejects outright; it
     # does not fall back to the token's real engagement/clearance and
     # partially proceed; nothing is ingested and nothing beyond the error
     # detail comes back.
     user = _acme_user(clearance=1)
     resp = client.post(
         "/ingest",
-        json={"path": "data/sample/acme_research.txt", "engagement": "globex", "clearance": 99},
+        json={"path": "data/sample/acme_research.txt", "engagement": "globex", "clearance": 3},
         headers=_bearer(user),
     )
     assert resp.status_code == 403
@@ -725,13 +736,13 @@ def test_upload_into_wrong_engagement_is_403(client, sample_store):
 
 def test_upload_above_own_clearance_is_403(client, sample_store):
     _, store, _, _ = sample_store
-    resp = _upload(client, _acme_user(clearance=1), "a.txt", b"anything", clearance=5)
+    resp = _upload(client, _acme_user(clearance=1), "a.txt", b"anything", clearance=3)
     assert resp.status_code == 403
     assert _doc_chunks(store, "acme", "a.txt") == []
 
 
-@pytest.mark.parametrize("clearance", [0, -1])
-def test_upload_clearance_below_one_is_rejected(client, sample_store, clearance):
+@pytest.mark.parametrize("clearance", [0, -1, 4, 5])
+def test_upload_clearance_outside_one_to_three_is_rejected(client, sample_store, clearance):
     _, store, _, _ = sample_store
     resp = _upload(client, _acme_user(), "low.txt", b"Some content.", clearance=clearance)
     assert resp.status_code == 422
@@ -983,10 +994,10 @@ def test_replace_allowed_at_equal_clearance_and_for_admin(client, sample_store):
     assert _upload(client, _acme_user(clearance=3), "plan.txt", b"Version one.", clearance=3).status_code == 200
     assert _upload(client, _acme_user(clearance=3), "plan.txt", b"Version two.", clearance=2).status_code == 200
     assert _upload(client, _acme_user(clearance=2), "plan.txt", b"Version three.", clearance=2).status_code == 200
-    # Raise it above every analyst, then an admin can still replace it.
+    # Raise it above a clearance 2 analyst, then an admin can still replace it.
     store_text = lambda: " ".join(c.text for c in _doc_chunks(store, "acme", "plan.txt"))
     admin = _admin_user()
-    assert _upload(client, admin, "plan.txt", b"Admin version.", clearance=5).status_code == 200
+    assert _upload(client, admin, "plan.txt", b"Admin version.", clearance=3).status_code == 200
     assert _upload(client, _acme_user(clearance=2), "plan.txt", b"Nope.", clearance=1).status_code == 409
     assert _upload(client, admin, "plan.txt", b"Admin replaced again.", clearance=1).status_code == 200
     assert store_text() == "Admin replaced again."

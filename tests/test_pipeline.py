@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from consultrag.embeddings import HashEmbedder
@@ -67,3 +69,14 @@ def test_extractive_trailer_has_no_em_dash():
     out = ExtractiveLLM().complete("system", "QUESTION: q\n\nCONTEXT:\n[1] Source: a.txt\nSome text.")
     assert "(Offline extractive mode. Connect an LLM backend for synthesis.)" in out
     assert "—" not in out
+
+
+@pytest.mark.parametrize("clearance", ["0", "4"])
+def test_ingest_cli_refuses_clearance_outside_one_to_three(tmp_path, clearance):
+    import subprocess
+
+    script = Path(__file__).resolve().parents[1] / "scripts" / "ingest.py"
+    r = subprocess.run([sys.executable, str(script), "--path", str(tmp_path), "--index", str(tmp_path / "idx"),
+                        "--clearance", clearance, "--offline"], capture_output=True, text=True, timeout=60)
+    assert r.returncode == 2 and "invalid choice" in r.stderr
+    assert not (tmp_path / "idx").exists()

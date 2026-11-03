@@ -90,7 +90,12 @@ class AuthzRepository:
                 roles.add(role)  # global grant, e.g. "admin"
             else:
                 roles.add(f"engagement:{engagement}")
-                roles.add(role)
+                # An engagement row's label is descriptive only. "admin" is a
+                # global role and only counts on a global row (engagement
+                # NULL), so an engagement row labelled "admin" grants nothing
+                # beyond the engagement itself.
+                if role != "admin":
+                    roles.add(role)
                 engagements.append(engagement)
 
         # End the read transaction so this connection holds no locks.
@@ -133,7 +138,10 @@ class AuthzRepository:
         return row[0]
 
     def add_membership(self, user_id: int, engagement: str | None, role: str) -> None:
-        """engagement=None grants a global role (e.g. add_membership(uid, None, "admin"))."""
+        """engagement=None grants a global role (e.g. add_membership(uid, None, "admin")).
+        Refuses an engagement row labelled "admin": admin is global only."""
+        if engagement is not None and role == "admin":
+            raise ValueError('"admin" is a global role; grant it with engagement=None')
         with self._conn.cursor() as cur:
             cur.execute(
                 """

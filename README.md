@@ -305,8 +305,8 @@ curl.exe -F "file=@data/sample/acme_research.txt" -F "engagement=acme" -F "clear
 
 - **Who can upload:** the same rules as `/ingest`. You must belong to the
   engagement (or be a global admin), and you can't upload above your own
-  clearance. Clearance must be at least 1, the lowest level; `0` or a
-  negative value returns `422`.
+  clearance. Clearance is 1, 2 or 3 (the levels in use); any other value
+  returns `422`, for `/ingest` too.
 - **File types:** `.txt`, `.md`, `.pdf` and `.pptx`, taken from the loaders.
   Audio isn't accepted through upload yet. Anything else returns `415`.
 - **Size limit:** `MAX_UPLOAD_MB`, default 25. Larger files return `413`.
@@ -678,8 +678,11 @@ AWS**.
 - **First admin:** `INITIAL_ADMIN_EMAILS` (comma-separated). A listed
   account becomes a global admin with clearance 3 the first time it signs in,
   and only if Google reports the email as verified. It happens once per
-  account, so a later demotion sticks. The API logs it by user number, never
-  the email.
+  account: the time it applied is stored in `users.initial_admin_applied_at`,
+  set in the same transaction as the grant with the user row locked, so a
+  later demotion sticks while the email is still listed and two sign-ins at
+  once grant it a single time. The API logs it by user number, never the
+  email.
 - **Invitations:** an admin invites a Google account email (case doesn't
   matter) with engagements and a clearance. It applies once, at that
   person's first verified sign-in, and expires after `INVITATION_TTL_DAYS`
@@ -696,7 +699,13 @@ AWS**.
 - **Safety rules:** every `/admin` team route checks the admin role in the
   token and again in the database. The last admin can't be removed or
   demoted, admins can't remove their own admin rights or access, clearance
-  must be 1 to 5, and destructive actions ask for confirmation.
+  must be 1 to 3 (also for upload, `/ingest` and the scripts), and
+  destructive actions ask for confirmation. An admin at clearance 3 can read
+  and manage every document.
+- **Admin is global only:** only a membership row with no engagement grants
+  admin. A row for an engagement labelled "admin" grants that engagement and
+  nothing more; the API, the repository and `seed_authz.py` refuse to create
+  one.
 - **When changes apply:** at the person's next token refresh at the latest.
   Removing someone also revokes their refresh tokens (they must sign in
   again, which gets them nothing), but **an access token that was already
@@ -707,8 +716,8 @@ AWS**.
 
 `scripts/seed_authz.py` still works as a fallback (for example
 `--user-id 90 --admin --clearance 3`), and now refuses `--role admin` with
-`--engagement`, because an engagement membership labelled "admin" would be
-read as the global admin role.
+`--engagement` and a clearance outside 1 to 3. Use `--admin` for the global
+admin role.
 
 ### Static export
 

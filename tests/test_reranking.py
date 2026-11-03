@@ -47,7 +47,7 @@ def test_reranker_output_order_is_applied():
         reranker=FakeReranker(),
         top_k=3,
     )
-    user = User.make("u", roles=["admin"], clearance=5)
+    user = User.make("u", roles=["admin"], clearance=3)
     out = engine.retrieve("q", user)
     assert [c["chunk_id"] for c in out] == ["c", "b", "a"]
 
@@ -60,7 +60,7 @@ def test_noop_reranker_preserves_fused_order_and_trims():
         reranker=NoOpReranker(),
         top_k=2,
     )
-    user = User.make("u", roles=["admin"], clearance=5)
+    user = User.make("u", roles=["admin"], clearance=3)
     out = engine.retrieve("q", user)
     assert [c["chunk_id"] for c in out] == ["a", "b"]
 
@@ -77,7 +77,7 @@ def test_reranker_only_sees_access_filtered_candidates():
         reranker=FakeReranker(),
         top_k=3,
     )
-    user = User.make("u", roles=["analyst", "engagement:acme"], clearance=5)
+    user = User.make("u", roles=["analyst", "engagement:acme"], clearance=3)
     out = engine.retrieve("q", user)
     assert "a" not in [c["chunk_id"] for c in out]
     assert [c["chunk_id"] for c in out] == ["c", "b"]
@@ -110,7 +110,7 @@ def test_selected_engagement_reaches_reranker_and_nothing_else_does():
         reranker=reranker,
         top_k=3,
     )
-    admin = User.make("u", roles=["admin"], clearance=5)
+    admin = User.make("u", roles=["admin"], clearance=3)
     out = engine.retrieve("q", admin, engagement="acme")
     assert reranker.seen == ["b", "c"]
     assert [c["chunk_id"] for c in out] == ["b", "c"]

@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 
 from ..audit import insert_audit_event
 from ..auth.access_settings import is_valid_email, normalize_email
+from ..security.access import MAX_CLEARANCE, MIN_CLEARANCE
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,6 @@ PRESETS: dict[str, dict] = {
 }
 # Labels allowed on engagement memberships. Never 'admin' (see above).
 ENGAGEMENT_ROLES = ("analyst", "manager", "senior_management")
-MIN_CLEARANCE, MAX_CLEARANCE = 1, 5
 _ENGAGEMENT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 
@@ -110,6 +110,9 @@ def _lock_admins(cur) -> None:
 
 
 def _add_membership(cur, user_id: int, engagement: str | None, role: str) -> bool:
+    if engagement is not None and role == "admin":
+        # Admin is global only (engagement NULL); never write it per engagement.
+        raise TeamError(422, '"admin" is a global role, not an engagement role')
     cur.execute(
         """
         INSERT INTO engagement_memberships (user_id, engagement, role)

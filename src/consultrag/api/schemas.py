@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from ..security.access import MAX_CLEARANCE, MIN_CLEARANCE
 
 
 class MeResponse(BaseModel):
@@ -35,7 +37,7 @@ class RefreshResponse(BaseModel):
 class IngestRequest(BaseModel):
     path: str
     engagement: str
-    clearance: int = 1
+    clearance: int = Field(1, ge=MIN_CLEARANCE, le=MAX_CLEARANCE)
 
 
 class IngestResponse(BaseModel):
@@ -169,7 +171,7 @@ class MembersResponse(BaseModel):
 
 
 class MemberUpdate(BaseModel):
-    clearance: int | None = None
+    clearance: int | None = Field(None, ge=MIN_CLEARANCE, le=MAX_CLEARANCE)
     is_admin: bool | None = None
     # Replaces the member's engagement memberships when given.
     engagements: list[EngagementMembership] | None = None
@@ -179,7 +181,7 @@ class InviteRequest(BaseModel):
     email: str
     engagements: list[str] = []
     role: TeamRole = "analyst"
-    clearance: int = 1
+    clearance: int = Field(1, ge=MIN_CLEARANCE, le=MAX_CLEARANCE)
     is_admin: bool = False
 
 

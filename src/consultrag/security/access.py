@@ -16,6 +16,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+# The clearance levels in use: 1 = standard (Analyst), 2 = Manager,
+# 3 = Senior management (and the Admin preset). Every place that accepts a
+# clearance (Team, invitations, upload, path ingest, the CLI scripts)
+# validates against this range.
+MIN_CLEARANCE = 1
+MAX_CLEARANCE = 3
+
 
 @dataclass(frozen=True)
 class User:

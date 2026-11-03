@@ -331,7 +331,8 @@ def test_admin_can_invite_list_revoke_and_edit(api, repo):
     {"email": "bad", "engagements": ["acme"]},
     {"email": "x@example.test", "engagements": ["Bad Name!"]},
     {"email": "x@example.test", "engagements": ["acme"], "clearance": 0},
-    {"email": "x@example.test", "engagements": ["acme"], "clearance": 6},
+    {"email": "x@example.test", "engagements": ["acme"], "clearance": 4},
+    {"email": "x@example.test", "engagements": ["acme"], "clearance": 5},
     {"email": "x@example.test", "engagements": []},
     {"email": "x@example.test", "engagements": ["acme"], "role": "owner"},
 ])
@@ -342,7 +343,7 @@ def test_invalid_invitations_are_rejected(api, repo, body):
 
 
 @needs_pg
-@pytest.mark.parametrize("clearance", [0, -1, 6, 99])
+@pytest.mark.parametrize("clearance", [0, -1, 4, 5, 99])
 def test_invalid_clearance_is_rejected(api, repo, clearance):
     admin = _user(repo, "a@example.test")
     _make_admin(repo, admin)
@@ -438,3 +439,153 @@ def test_service_level_guards_hold_without_the_api_layer(repo):
         update_member(repo.conn, "system", member, engagements=[{"engagement": "acme", "role": "admin"}])
     assert e.value.status == 422
     assert "admin" not in repo.build_user(member).roles
+
+
+@needs_pg
+@pytest.mark.parametrize("clearance", [0, 4, 5])
+def test_service_refuses_clearance_outside_one_to_three(repo, clearance):
+    from consultrag.authz.team import TeamError, update_member
+
+    admin = _user(repo, "a@example.test")
+    _make_admin(repo, admin)
+    member = _user(repo, "m@example.test")
+    with pytest.raises(TeamError) as e:
+        _invite(repo, "x@example.test", clearance=clearance)
+    assert e.value.status == 422
+    with pytest.raises(TeamError) as e:
+        update_member(repo.conn, str(admin), member, clearance=clearance)
+    assert e.value.status == 422
+    assert repo.build_user(member).clearance == 1
+
+
+# --- admin is a global role only ----------------------------------------------------------------
+
+
+@needs_pg
+def test_engagement_row_labelled_admin_grants_no_admin_rights(api, repo):
+    # A row written outside the app (e.g. by hand in SQL) with engagement set
+    # and role "admin" gives the engagement only: no "admin" role, no Team
+    # routes, no other engagements.
+    from consultrag.authz.team import is_admin_in_db
+
+    member = _user(repo, "m@example.test")
+    with repo.conn.cursor() as cur:
+        cur.execute("INSERT INTO engagement_memberships (user_id, engagement, role) VALUES (%s, 'acme', 'admin')",
+                    (member,))
+    repo.conn.commit()
+    user = repo.build_user(member)
+    assert "admin" not in user.roles
+    assert "engagement:acme" in user.roles and "engagement:globex" not in user.roles
+    assert not is_admin_in_db(repo.conn, member)
+    assert api.get("/admin/members", headers=_bearer(repo, member)).status_code == 403
+
+
+@needs_pg
+def test_repository_refuses_an_engagement_row_labelled_admin(repo):
+    member = _user(repo, "m@example.test")
+    with pytest.raises(ValueError, match="global role"):
+        repo.add_membership(member, "acme", "admin")
+    with repo.conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM engagement_memberships WHERE user_id = %s", (member,))
+        assert cur.fetchone()[0] == 0
+    repo.conn.commit()
+    repo.add_membership(member, None, "admin")  # the global grant still works
+    assert "admin" in repo.build_user(member).roles
+
+
+# --- INITIAL_ADMIN_EMAILS applies once ------------------------------------------------------------
+
+
+def _sign_in(repo, email, initial_admins):
+    from consultrag.auth.google_login import authenticate_google_id_token
+
+    return authenticate_google_id_token("Bearer x", _Verifier(email), repo, initial_admin_emails=initial_admins)
+
+
+@needs_pg
+def test_initial_admin_removed_by_another_admin_is_not_granted_back(api, repo, caplog):
+    boss = _sign_in(repo, "boss@example.test", "boss@example.test")
+    assert "admin" in boss.roles
+    boss_id = int(boss.user_id)
+    with repo.conn.cursor() as cur:  # the stored "already applied" state
+        cur.execute("SELECT initial_admin_applied_at IS NOT NULL FROM users WHERE id = %s", (boss_id,))
+        assert cur.fetchone()[0] is True
+    repo.conn.commit()
+
+    other = _user(repo, "other@example.test")
+    _make_admin(repo, other)
+    r = api.patch(f"/admin/members/{boss_id}", headers=_bearer(repo, other), json={"is_admin": False})
+    assert r.status_code == 200
+
+    # Still listed in the setting, signs in again: stays demoted.
+    with caplog.at_level(logging.DEBUG):
+        again = _sign_in(repo, "boss@example.test", "boss@example.test")
+    assert "admin" not in again.roles
+    rows = [r for r in _audit_rows(repo) if "initial_admin_granted" in r]
+    assert len(rows) == 1
+    assert "@" not in caplog.text
+
+
+@needs_pg
+def test_concurrent_first_sign_ins_grant_initial_admin_exactly_once(repo, team_dsn, caplog):
+    import threading
+
+    from consultrag.authz.repository import AuthzRepository
+
+    barrier = threading.Barrier(2)
+    results, errors = [], []
+
+    def worker():
+        r = AuthzRepository(dsn=team_dsn)
+        try:
+            barrier.wait(timeout=10)
+            results.append(_sign_in(r, "boss@example.test", "boss@example.test"))
+        except Exception as e:  # pragma: no cover - reported below
+            errors.append(e)
+        finally:
+            r.close()
+
+    with caplog.at_level(logging.DEBUG):
+        threads = [threading.Thread(target=worker) for _ in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+    assert not errors and len(results) == 2
+    assert results[0].user_id == results[1].user_id
+    assert all("admin" in u.roles for u in results)
+    with repo.conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM users")
+        assert cur.fetchone()[0] == 1
+        cur.execute("SELECT count(*) FROM engagement_memberships WHERE engagement IS NULL AND role = 'admin'")
+        assert cur.fetchone()[0] == 1
+    repo.conn.commit()
+    assert len([r for r in _audit_rows(repo) if "initial_admin_granted" in r]) == 1
+    assert "@" not in caplog.text
+
+
+@needs_pg
+def test_membership_writer_refuses_an_engagement_admin_row_by_itself(repo):
+    # The last layer under update_member's own role check, for any future
+    # caller that writes memberships directly.
+    from consultrag.authz.team import TeamError, _add_membership
+
+    member = _user(repo, "m@example.test")
+    with pytest.raises(TeamError) as e, repo.conn.cursor() as cur:
+        _add_membership(cur, member, "acme", "admin")
+    repo.conn.rollback()
+    assert e.value.status == 422
+    assert "admin" not in repo.build_user(member).roles
+
+
+@needs_pg
+def test_service_refuses_unknown_engagement_labels(repo):
+    from consultrag.authz.team import TeamError, update_member
+
+    admin = _user(repo, "a@example.test")
+    _make_admin(repo, admin)
+    member = _user(repo, "m@example.test")
+    with pytest.raises(TeamError) as e:
+        update_member(repo.conn, str(admin), member, engagements=[{"engagement": "acme", "role": "owner"}])
+    assert e.value.status == 422
+    assert repo.build_user(member).roles == frozenset()

@@ -86,7 +86,7 @@ def test_sql_filter_blocks_other_engagement_before_access_policy(store):
         _chunk("acme-doc", "acme content", "acme", 1),
         _chunk("globex-doc", "globex content", "globex", 1),
     ])
-    user = User.make("u", roles=["analyst", "engagement:acme"], clearance=5)
+    user = User.make("u", roles=["analyst", "engagement:acme"], clearance=3)
     qvec = np.array([1, 0, 0, 0], dtype=np.float32)
     results = store.search(qvec, top_k=5, user=user)
     assert [r["chunk_id"] for r in results] == ["acme-doc"]
@@ -103,7 +103,7 @@ def test_sql_filter_blocks_insufficient_clearance(store):
 def test_admin_bypasses_engagement_filter(store):
     vectors = np.array([[1, 0, 0, 0]], dtype=np.float32)
     store.add(vectors, [_chunk("globex-doc", "content", "globex", 1)])
-    admin = User.make("u", roles=["admin"], clearance=5)
+    admin = User.make("u", roles=["admin"], clearance=3)
     qvec = np.array([1, 0, 0, 0], dtype=np.float32)
     results = store.search(qvec, top_k=5, user=admin)
     assert [r["chunk_id"] for r in results] == ["globex-doc"]
@@ -118,7 +118,7 @@ def test_selected_engagement_is_filtered_in_sql_before_limit(store):
     vectors = np.array([[1, 0, 0, 0]] * 5 + [[0.1, 1, 0, 0]], dtype=np.float32)
     store.add(vectors, [_chunk(f"globex-{i}", "g", "globex", 1) for i in range(5)]
               + [_chunk("acme-doc", "a", "acme", 1)])
-    admin = User.make("u", roles=["admin"], clearance=5)
+    admin = User.make("u", roles=["admin"], clearance=3)
     qvec = np.array([1, 0, 0, 0], dtype=np.float32)
     assert [r["chunk_id"] for r in store.search(qvec, top_k=1, user=admin, engagement="acme")] == ["acme-doc"]
     # Unscoped admin search is unchanged.

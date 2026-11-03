@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { UPLOAD_ACCEPT, uploadDocument } from "../lib/api";
+import { MAX_CLEARANCE, MIN_CLEARANCE } from "../lib/team";
 import { checkUploadFile, pickDroppedFile } from "../lib/uploads";
 import { ErrorBanner } from "./ErrorBanner";
 import { Button } from "./ui/Button";
@@ -152,7 +153,8 @@ export function IngestPanel({
           <input
             id="upload-clearance"
             type="number"
-            min={1}
+            min={MIN_CLEARANCE}
+            max={MAX_CLEARANCE}
             aria-describedby="upload-clearance-hint"
             className={inputClass}
             value={clearance}

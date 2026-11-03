@@ -15,7 +15,7 @@ export const PRESETS: Record<TeamRole, { label: string; clearance: number; isAdm
 
 export const PRESET_ORDER: TeamRole[] = ["analyst", "manager", "senior_management", "admin"];
 export const MIN_CLEARANCE = 1;
-export const MAX_CLEARANCE = 5;
+export const MAX_CLEARANCE = 3; // mirrors security/access.py
 
 /** The label shown for a user: Admin, a preset by clearance, or "Clearance N". */
 export function roleLabel(isAdmin: boolean, clearance: number): string {

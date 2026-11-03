@@ -23,6 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from consultrag.authz.repository import AuthzRepository
+from consultrag.security.access import MAX_CLEARANCE, MIN_CLEARANCE
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -46,11 +47,11 @@ def main(argv=None, repo_factory=AuthzRepository) -> int:
         ap.error("--email is required with --google-sub")
     if args.user_id is not None and not (args.engagement or args.admin or args.clearance is not None):
         ap.error("--user-id grants nothing by default: pass --engagement, --admin and/or --clearance")
-    if args.clearance is not None and args.clearance < 1:
-        ap.error("--clearance must be at least 1")
+    if args.clearance is not None and not (MIN_CLEARANCE <= args.clearance <= MAX_CLEARANCE):
+        ap.error(f"--clearance must be {MIN_CLEARANCE} to {MAX_CLEARANCE}")
     if args.engagement and args.role == "admin":
-        # An engagement membership labelled "admin" would be read as the
-        # global admin role (authz/repository.py). Use --admin for that.
+        # Admin is a global role only: an engagement row labelled "admin"
+        # grants no admin rights (authz/repository.py). Use --admin for that.
         ap.error("--role admin isn't allowed with --engagement; use --admin to grant global admin")
 
     repo = repo_factory()

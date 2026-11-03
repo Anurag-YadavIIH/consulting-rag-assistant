@@ -91,7 +91,7 @@ def test_query_403_raises_forbidden_error():
 def test_ingest_403_raises_forbidden_error():
     with patch("httpx.post", return_value=_response(403, {"detail": "cannot ingest at a clearance above your own"})):
         with pytest.raises(ForbiddenError):
-            ingest("data/sample", "acme", clearance=99)
+            ingest("data/sample", "acme", clearance=3)
 
 
 def test_query_500_raises_server_error():

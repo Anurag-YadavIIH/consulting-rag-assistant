@@ -70,9 +70,19 @@ def test_user_id_admin_and_clearance(capsys):
     assert ("set_clearance", 7, 2) in repo.calls
 
 
-def test_clearance_below_one_is_refused():
+@pytest.mark.parametrize("clearance", ["0", "4", "5"])
+def test_clearance_outside_one_to_three_is_refused(clearance):
+    repo = _FakeRepo()
     with pytest.raises(SystemExit):
-        _run(["--user-id", "7", "--clearance", "0"], _FakeRepo())
+        _run(["--user-id", "7", "--clearance", clearance], repo)
+    assert repo.calls == []
+
+
+def test_engagement_role_admin_is_refused():
+    repo = _FakeRepo()
+    with pytest.raises(SystemExit):
+        _run(["--user-id", "7", "--engagement", "acme", "--role", "admin"], repo)
+    assert repo.calls == []
 
 
 def test_google_sub_mode_never_prints_the_email_or_subject(capsys):

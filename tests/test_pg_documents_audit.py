@@ -292,7 +292,7 @@ def _bearer(user: User) -> dict:
 
 def test_admin_activity_requires_an_admin(admin_client):
     assert admin_client.get("/admin/activity").status_code == 401
-    member = User.make("7", roles=["analyst", "engagement:acme", "engagement:globex"], clearance=5)
+    member = User.make("7", roles=["analyst", "engagement:acme", "engagement:globex"], clearance=3)
     resp = admin_client.get("/admin/activity", headers=_bearer(member))
     assert resp.status_code == 403 and resp.json() == {"detail": "admins only"}
 
@@ -305,7 +305,7 @@ def test_admin_activity_paginates_and_shows_ids_not_text(admin_client, store):
         for i in range(3):
             insert_audit_event(cur, {"event": "ingest", "user_id": user_id, "engagement": "acme",
                                      "document": f"doc{i}.txt", "n_chunks": i + 1, "redaction_counts": {}})
-    admin = User.make("99", roles=["admin"], clearance=5)
+    admin = User.make("99", roles=["admin"], clearance=3)
     page1 = admin_client.get("/admin/activity?limit=2", headers=_bearer(admin)).json()
     assert [e["document"] for e in page1["events"]] == ["doc2.txt", "doc1.txt"]
     assert page1["next_before"] == page1["events"][-1]["id"]
@@ -328,12 +328,12 @@ def test_admin_activity_filters_by_event_type(admin_client, store):
         insert_audit_event(cur, {"event": "query", "user_id": user_id, "n_retrieved": 2, "n_blocked": 0})
         insert_audit_event(cur, {"event": "delete", "user_id": user_id, "engagement": "acme",
                                  "document": "f.txt", "n_chunks": 1})
-    admin = User.make("99", roles=["admin"], clearance=5)
+    admin = User.make("99", roles=["admin"], clearance=3)
     for event in ("ingest", "query", "delete"):
         body = admin_client.get(f"/admin/activity?event={event}&limit=200", headers=_bearer(admin)).json()
         mine = [e for e in body["events"] if e["user_id"] == user_id]
         assert [e["event"] for e in mine] == [event]
         assert all(e["event"] == event for e in body["events"])
     assert admin_client.get("/admin/activity?event=bogus", headers=_bearer(admin)).status_code == 422
-    member = User.make("7", roles=["analyst", "engagement:acme"], clearance=5)
+    member = User.make("7", roles=["analyst", "engagement:acme"], clearance=3)
     assert admin_client.get("/admin/activity?event=query", headers=_bearer(member)).status_code == 403

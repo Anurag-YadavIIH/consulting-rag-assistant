@@ -4,7 +4,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, expect, it, vi } from "vitest";
 import type { InvitationInfo, MemberInfo } from "../lib/api";
-import { PRESETS, engagementRoleFor, roleLabel } from "../lib/team";
+import { MAX_CLEARANCE, MIN_CLEARANCE, PRESETS, engagementRoleFor, roleLabel } from "../lib/team";
+import { IngestPanel } from "../components/IngestPanel";
 import { InvitationTable, InviteForm, MemberEditor, MemberTable } from "../components/team/TeamParts";
 import { UserPanel } from "../components/UserPanel";
 
@@ -37,6 +38,20 @@ it("the sidebar shows the user's role and clearance", () => {
     meInfo: { user_id: "7", engagements: ["acme"], is_admin: false, clearance: 2, email: "p@example.test" }, dark: true,
   }));
   expect(out).toContain("Manager, clearance 2");
+});
+
+it("every clearance input accepts 1 to 3 only", () => {
+  expect([MIN_CLEARANCE, MAX_CLEARANCE]).toEqual([1, 3]);
+  for (const p of Object.values(PRESETS)) expect(p.clearance).toBeLessThanOrEqual(MAX_CLEARANCE);
+  const forms = [
+    html(createElement(InviteForm, { knownEngagements: ["acme"], busy: false, onInvite: () => {} })),
+    html(createElement(MemberEditor, { member: member(), isSelf: false, knownEngagements: ["acme"], busy: false,
+      onSave: () => {}, onCancel: () => {} })),
+    html(createElement(IngestPanel, { engagement: "acme" })),
+  ];
+  for (const out of forms) {
+    expect(out).toMatch(/type="number"[^>]*min="1"[^>]*max="3"|max="3"[^>]*min="1"[^>]*type="number"/);
+  }
 });
 
 it("the members table marks you, hides Remove on your own row and escapes emails", () => {

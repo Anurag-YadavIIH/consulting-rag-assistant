@@ -74,7 +74,7 @@ def nobody():
 
 
 def admin():
-    return User.make("99", roles=["admin"], clearance=5)
+    return User.make("99", roles=["admin"], clearance=3)
 
 
 # --- GET /documents ---------------------------------------------------------------
@@ -110,6 +110,29 @@ def test_list_documents_admin_sees_any_engagement_within_clearance(env):
     assert docs == {"engagement": "globex", "documents": [
         {"name": "globex.txt", "chunks": 1, "clearance": 1, "uploaded_at": docs["documents"][0]["uploaded_at"]}
     ]}
+
+
+def test_admin_at_clearance_three_lists_reads_and_deletes_every_document(env):
+    # 3 is the top level in use, so an admin at 3 sees and manages all
+    # documents in every engagement, including clearance 3 ones.
+    c, store, engine, _, put, _ = env
+    put("globex_board.txt", "Globex GLOBEX_BOARD_TOKEN board pack.", engagement="globex", clearance=3)
+    engine.retriever.refresh()
+    h = _bearer(admin())
+    for engagement, expected in [("acme", ["board.txt", "open.txt"]),
+                                 ("globex", ["globex.txt", "globex_board.txt"])]:
+        docs = c.get(f"/documents?engagement={engagement}", headers=h).json()["documents"]
+        assert sorted(d["name"] for d in docs) == expected
+
+    for engagement, token, name in [("acme", "BOARD_TOKEN", "board.txt"),
+                                    ("globex", "GLOBEX_BOARD_TOKEN", "globex_board.txt")]:
+        body = c.post("/query", json={"question": f"{token} minutes board", "engagement": engagement},
+                      headers=h).json()
+        assert name in [x["source_path"] for x in body["citations"]]
+
+    assert c.delete("/documents?engagement=acme&name=board.txt", headers=h).status_code == 200
+    assert c.delete("/documents?engagement=globex&name=globex_board.txt", headers=h).status_code == 200
+    assert sorted(ch.metadata["source_path"] for ch in store.all_chunks()) == ["globex.txt", "open.txt"]
 
 
 def test_list_documents_reports_null_upload_time_for_older_documents(env):

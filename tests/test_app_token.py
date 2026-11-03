@@ -228,12 +228,12 @@ def test_refresh_rereads_authz_store_not_stale_claims():
 
     # Permission change happens in the DB AFTER the refresh token was issued —
     # e.g. an admin revokes/changes this user's access.
-    repo.set_authz(1, roles=frozenset({"admin"}), clearance=5)
+    repo.set_authz(1, roles=frozenset({"admin"}), clearance=3)
 
     new_access = refresh_app_token(refresh_token, SECRET, repo)
     claims = verify_app_token(new_access, SECRET, expected_type="access")
 
-    assert claims["clearance"] == 5
+    assert claims["clearance"] == 3
     assert claims["roles"] == ["admin"]
     assert "analyst" not in claims["roles"]
 

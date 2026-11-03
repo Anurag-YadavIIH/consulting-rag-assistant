@@ -30,7 +30,7 @@ from ...config import settings
 from ...ingestion.loaders import PdfLoader, PptxLoader, TextLoader
 from ...pipeline import DocumentLoadError, DocumentTooLarge, IngestionPipeline
 from ...rag import RAGEngine
-from ...security.access import AccessPolicy, User
+from ...security.access import MAX_CLEARANCE, MIN_CLEARANCE, AccessPolicy, User
 from ...vectorstore import DocumentReplaceForbidden
 from ..deps import get_current_app_user, get_ingestion_pipeline, get_rag_engine
 from ..schemas import IngestRequest, IngestResponse, UploadResponse
@@ -110,8 +110,8 @@ def ingest(
 def ingest_upload(
     file: UploadFile = File(...),
     engagement: str = Form(...),
-    # 1 is the lowest clearance level (security/access.py); FastAPI returns 422 below it.
-    clearance: int = Form(1, ge=1),
+    # Clearance levels are 1 to 3 (security/access.py); FastAPI returns 422 outside them.
+    clearance: int = Form(1, ge=MIN_CLEARANCE, le=MAX_CLEARANCE),
     user: User = Depends(get_current_app_user),
     pipeline: IngestionPipeline = Depends(get_ingestion_pipeline),
     engine: RAGEngine = Depends(get_rag_engine),

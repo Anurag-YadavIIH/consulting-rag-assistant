@@ -15,6 +15,7 @@ from _cli_common import add_embedder_args, build_embedder, resolve_network_polic
 
 from consultrag.audit import AuditLog
 from consultrag.pipeline import IngestionPipeline
+from consultrag.security.access import MAX_CLEARANCE, MIN_CLEARANCE
 from consultrag.vectorstore import NumpyVectorStore
 
 
@@ -23,7 +24,8 @@ def main():
     ap.add_argument("--path", required=True, help="file or directory to ingest")
     ap.add_argument("--index", default="index", help="index directory")
     ap.add_argument("--engagement", default=None)
-    ap.add_argument("--clearance", type=int, default=1)
+    ap.add_argument("--clearance", type=int, default=1, choices=range(MIN_CLEARANCE, MAX_CLEARANCE + 1),
+                    help="1 (standard) to 3")
     ap.add_argument("--table", default="chunks", help="pgvector table name (--store pgvector only)")
     add_embedder_args(ap)
     args = ap.parse_args()
