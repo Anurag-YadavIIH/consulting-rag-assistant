@@ -66,3 +66,48 @@ def test_hybrid_retriever_falls_back_to_dense_only_when_bm25_empty():
     qvec = np.array([1, 0, 0, 0], dtype=np.float32)
     results = retriever.retrieve(qvec, "alpha", fused_k=5)
     assert [r["chunk_id"] for r in results] == ["x", "y"]
+
+
+def _crowded_store():
+    # Five globex chunks that match the query far better than the single acme
+    # chunk, on both the dense and the keyword side. Without scoping before
+    # the top-k cut, acme never makes it into a small top_k.
+    # Unrelated filler keeps "pricing" rare enough for BM25 to weight it.
+    store = NumpyVectorStore(dim=4)
+    vectors = [[1, 0, 0, 0]] * 5 + [[0.1, 1, 0, 0]] + [[0, 0, 1, 0]] * 10
+    chunks = [
+        StoredChunk(
+            chunk_id=f"g{i}", text="pricing pricing pricing strategy",
+            metadata={"engagement": "globex"},
+        )
+        for i in range(5)
+    ] + [StoredChunk(chunk_id="a0", text="acme pricing note", metadata={"engagement": "acme"})] + [
+        StoredChunk(chunk_id=f"f{i}", text=f"unrelated filler text {i}",
+                    metadata={"engagement": "initech"})
+        for i in range(10)
+    ]
+    store.add(np.array(vectors, dtype=np.float32), chunks)
+    return store
+
+
+def test_numpy_search_scopes_before_top_k():
+    store = _crowded_store()
+    qvec = np.array([1, 0, 0, 0], dtype=np.float32)
+    assert [r["chunk_id"] for r in store.search(qvec, top_k=1, engagement="acme")] == ["a0"]
+    assert store.search(qvec, top_k=3, engagement="nobody") == []
+    # Unscoped search is unchanged.
+    assert store.search(qvec, top_k=1)[0]["chunk_id"].startswith("g")
+
+
+def test_bm25_search_scopes_before_top_k():
+    index = BM25Index.from_store(_crowded_store())
+    assert [r["chunk_id"] for r in index.search("pricing", top_k=1, engagement="acme")] == ["a0"]
+    assert index.search("pricing", top_k=3, engagement="nobody") == []
+    assert index.search("pricing", top_k=1)[0]["chunk_id"].startswith("g")
+
+
+def test_hybrid_retriever_scopes_both_legs():
+    retriever = HybridRetriever(_crowded_store(), dense_k=1, bm25_k=1)
+    qvec = np.array([1, 0, 0, 0], dtype=np.float32)
+    results = retriever.retrieve(qvec, "pricing", fused_k=1, engagement="acme")
+    assert [r["chunk_id"] for r in results] == ["a0"]

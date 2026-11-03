@@ -300,6 +300,111 @@ def test_admin_role_from_token_crosses_engagements(client):
     assert any("globex" in s.lower() for s in sources)
 
 
+# --- a selected engagement scopes retrieval, not just validation -------------
+
+_BOTH_ENGAGEMENTS_QUESTION = "barrier to adoption, competitive threat and strategic risk?"
+
+
+def _citation_sources(resp) -> list[str]:
+    # Basenames only: pytest's tmp_path includes the test name, which may
+    # itself contain "acme" or "globex".
+    return [Path(c["source_path"]).name.lower() for c in resp.json()["citations"]]
+
+
+def _multi_user(clearance: int = 2) -> User:
+    return User.make(
+        "2", roles=["analyst", "engagement:acme", "engagement:globex"], clearance=clearance
+    )
+
+
+def test_admin_selecting_acme_gets_no_globex_sources(client):
+    resp = client.post(
+        "/query", json={"question": _BOTH_ENGAGEMENTS_QUESTION, "engagement": "acme"},
+        headers=_bearer(_admin_user()),
+    )
+    assert resp.status_code == 200
+    sources = _citation_sources(resp)
+    assert sources and all("acme" in s for s in sources)
+    assert "GLOBEX_STRATEGIC_RISK_TOKEN" not in resp.json()["answer"]
+
+
+def test_multi_engagement_user_selecting_one_gets_only_that_one(client):
+    for selected, other in (("acme", "globex"), ("globex", "acme")):
+        resp = client.post(
+            "/query", json={"question": _BOTH_ENGAGEMENTS_QUESTION, "engagement": selected},
+            headers=_bearer(_multi_user()),
+        )
+        assert resp.status_code == 200
+        sources = _citation_sources(resp)
+        assert sources and all(selected in s for s in sources)
+        assert not any(other in s for s in sources)
+
+
+def test_draft_selecting_engagement_is_scoped_too(client):
+    resp = client.post(
+        "/draft", json={"topic": _BOTH_ENGAGEMENTS_QUESTION, "engagement": "acme"},
+        headers=_bearer(_admin_user()),
+    )
+    assert resp.status_code == 200
+    sources = _citation_sources(resp)
+    assert sources and all("acme" in s for s in sources)
+
+
+def test_multi_engagement_user_selecting_unheld_engagement_is_403(client):
+    resp = client.post(
+        "/query", json={"question": "anything", "engagement": "initech"},
+        headers=_bearer(_multi_user()),
+    )
+    assert resp.status_code == 403
+    assert set(resp.json().keys()) == {"detail"}
+
+
+def test_clearance_still_enforced_within_selected_engagement(client, sample_store, tmp_path):
+    _, _, _, pipeline = sample_store
+    secret = tmp_path / "acme_board.txt"
+    secret.write_text("Acme board minutes: ACME_RESTRICTED_TOKEN barrier to adoption.")
+    pipeline.ingest_path(secret, engagement="acme", clearance=3)
+
+    low = client.post(
+        "/query", json={"question": "board minutes barrier to adoption", "engagement": "acme"},
+        headers=_bearer(_acme_user(clearance=2)),
+    )
+    assert low.status_code == 200
+    assert not any("acme_board" in s for s in _citation_sources(low))
+    assert "ACME_RESTRICTED_TOKEN" not in low.json()["answer"]
+
+    # Control: the chunk is retrievable in that scope by someone cleared for it.
+    high = client.post(
+        "/query", json={"question": "board minutes barrier to adoption", "engagement": "acme"},
+        headers=_bearer(_acme_user(clearance=3)),
+    )
+    assert any("acme_board" in s for s in _citation_sources(high))
+
+
+def test_omitted_engagement_keeps_todays_behaviour(client):
+    # Admin with no engagement: every engagement, as before.
+    admin = client.post(
+        "/query", json={"question": _BOTH_ENGAGEMENTS_QUESTION}, headers=_bearer(_admin_user())
+    )
+    assert admin.status_code == 200
+    sources = _citation_sources(admin)
+    assert any("acme" in s for s in sources) and any("globex" in s for s in sources)
+
+    # Multi-engagement user with no engagement: all of their memberships.
+    multi = client.post(
+        "/query", json={"question": _BOTH_ENGAGEMENTS_QUESTION}, headers=_bearer(_multi_user())
+    )
+    sources = _citation_sources(multi)
+    assert any("acme" in s for s in sources) and any("globex" in s for s in sources)
+
+    # Single-engagement member with no engagement: still only their own.
+    member = client.post(
+        "/query", json={"question": _BOTH_ENGAGEMENTS_QUESTION}, headers=_bearer(_acme_user())
+    )
+    sources = _citation_sources(member)
+    assert sources and not any("globex" in s for s in sources)
+
+
 # --- defense-in-depth: AccessPolicy backstop, even with zero SQL filtering --
 
 

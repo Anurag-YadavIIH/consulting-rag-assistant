@@ -83,20 +83,35 @@ class NumpyVectorStore:
         new_chunks = [self._chunks[i] for i in keep] + list(chunks)
         self._vectors, self._chunks = new_vectors, new_chunks
 
-    def search(self, query_vec: np.ndarray, top_k: int = 5, user=None) -> list[dict]:
+    def search(
+        self, query_vec: np.ndarray, top_k: int = 5, user=None, engagement: str | None = None
+    ) -> list[dict]:
         # `user` exists for interface parity with PgVectorStore.search(), which
         # uses it for a defense-in-depth SQL WHERE filter. This in-memory store
         # has no SQL layer, so it's accepted and ignored — AccessPolicy.filter()
         # (applied by RAGEngine after retrieval) is the sole access gate here.
+        # `engagement` restricts the candidates BEFORE the top-k cut, matching
+        # PgVectorStore's scoped WHERE clause.
         if len(self._chunks) == 0:
             return []
         q = query_vec.reshape(-1)
         q = q / (np.linalg.norm(q) + 1e-12)
         # vectors are stored normalized, so dot product == cosine similarity
         sims = self._vectors @ q
-        k = min(top_k, len(self._chunks))
+        if engagement is None:
+            candidates = np.arange(len(self._chunks))
+        else:
+            candidates = np.array(
+                [i for i, c in enumerate(self._chunks)
+                 if c.metadata.get("engagement") == engagement],
+                dtype=int,
+            )
+            if len(candidates) == 0:
+                return []
+        k = min(top_k, len(candidates))
         # argpartition for top-k, then sort just those
-        idx = np.argpartition(-sims, k - 1)[:k]
+        part = np.argpartition(-sims[candidates], k - 1)[:k]
+        idx = candidates[part]
         idx = idx[np.argsort(-sims[idx])]
         results = []
         for i in idx:

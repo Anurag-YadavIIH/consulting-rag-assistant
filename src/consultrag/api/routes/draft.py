@@ -31,7 +31,9 @@ def draft(
 ) -> DraftResponse:
     _require_engagement_membership(user, body.engagement)
 
-    answer = engine.answer(body.topic, user, system_prompt=DRAFT_SYSTEM_PROMPT)
+    answer = engine.answer(
+        body.topic, user, system_prompt=DRAFT_SYSTEM_PROMPT, engagement=body.engagement
+    )
     return DraftResponse(
         draft=answer.text,
         citations=[

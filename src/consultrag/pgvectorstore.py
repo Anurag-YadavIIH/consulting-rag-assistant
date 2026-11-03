@@ -196,7 +196,9 @@ class PgVectorStore:
                 self._conn.rollback()
                 raise
 
-    def search(self, query_vec, top_k: int = 5, user: User | None = None) -> list[dict]:
+    def search(
+        self, query_vec, top_k: int = 5, user: User | None = None, engagement: str | None = None
+    ) -> list[dict]:
         where = ["TRUE"]
         params: dict = {"qvec": query_vec, "top_k": top_k}
         if user is not None:
@@ -205,6 +207,13 @@ class PgVectorStore:
             if not AccessPolicy.is_admin(user):
                 where.append("(engagement IS NULL OR engagement = ANY(%(engagements)s))")
                 params["engagements"] = AccessPolicy.engagements_for(user)
+        # A requested scope only ever narrows the access filter above: it is
+        # ANDed with it, and it also excludes chunks with no engagement. Being
+        # in the SQL (before LIMIT) means other engagements can't crowd the
+        # scoped engagement out of the top_k.
+        if engagement is not None:
+            where.append("engagement = %(scope_engagement)s")
+            params["scope_engagement"] = engagement
 
         sql = f"""
             SELECT chunk_id, text, metadata, 1 - (embedding <=> %(qvec)s) AS score
