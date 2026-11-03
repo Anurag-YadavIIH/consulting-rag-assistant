@@ -26,14 +26,29 @@ export interface Citation {
   score: number;
   /** Redacted passage text, from a chunk the caller may see. */
   text: string;
+  /** What `score` measures: "similarity" (cosine, 0 to 1), "keyword" (raw
+   * BM25, a different unbounded scale) or "other". Never a confidence. */
+  score_kind?: "similarity" | "keyword" | "other";
   // Future seam: a `date`/`is_stale` field belongs here once the live-data
   // layer (see ARCHITECTURE.md §8) exists and /query actually returns one.
   // Not built on the API side yet, so deliberately not added here.
 }
 
+/** A passage the answer quotes verbatim (extractive mode). */
+export interface Quote {
+  number: number;
+  /** Redacted passage text, the same as citation `number`'s text. */
+  text: string;
+}
+
 export interface QueryResponse {
+  /** Plain-text answer (kept for the CLI and older clients). */
   answer: string;
   citations: Citation[];
+  /** "extractive": show `quotes`. "generative": show `answer`. Optional for
+   * older API versions, which were always extractive. */
+  mode?: "extractive" | "generative";
+  quotes?: Quote[];
 }
 
 export interface IngestResponse {
@@ -205,6 +220,13 @@ export function query(
     engagement: engagement ?? null,
     llm: "extractive",
   });
+}
+
+export function listDocuments(engagement: string): Promise<DocumentsResponse> {
+  return request<DocumentsResponse>(
+    "GET",
+    `/documents?engagement=${encodeURIComponent(engagement)}`
+  );
 }
 
 export function uploadDocument(

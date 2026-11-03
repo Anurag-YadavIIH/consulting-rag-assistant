@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { me, NotAuthenticatedError, type MeResponse } from "../lib/api";
 import { loginWithGoogleCredential, LoginError, onSignedOut, signOut } from "../lib/auth";
@@ -9,6 +10,9 @@ import { ErrorBanner } from "./ErrorBanner";
 import { SignInScreen } from "./SignInScreen";
 import { UserPanel } from "./UserPanel";
 import { EngagementSelector } from "./EngagementSelector";
+import { Wordmark } from "./Logo";
+import { ThemeControl } from "./ThemeControl";
+import { Spinner } from "./ui/Spinner";
 
 const FALLBACK_ENGAGEMENTS = (
   process.env.NEXT_PUBLIC_FALLBACK_ENGAGEMENTS ?? ""
@@ -16,15 +20,6 @@ const FALLBACK_ENGAGEMENTS = (
   .split(",")
   .map((e) => e.trim())
   .filter(Boolean);
-
-// Clearance threshold above which the Management nav link is shown.
-// 2, not 3: the levels actually seeded today are 0/1 (default) and 2
-// (scripts/seed_authz.py's example, the highest non-admin tier in use) —
-// no clearance-3 user exists anywhere in the codebase, so a threshold of
-// 3 would only ever match is_admin and never reflect a real clearance
-// tier. Cosmetic only — see app/management/page.tsx for why this hides
-// nothing that the backend doesn't already enforce.
-const MANAGEMENT_CLEARANCE_THRESHOLD = 2;
 
 export type ShellState =
   | { kind: "loading" }
@@ -46,6 +41,32 @@ export function engagementOptionsFor(meInfo: MeResponse): string[] {
   return meInfo.is_admin ? FALLBACK_ENGAGEMENTS : [];
 }
 
+export interface NavItem {
+  href: string;
+  label: string;
+}
+
+/** Sidebar navigation. Activity is only offered to admins; the API's
+ * /admin/activity is the real check (403 for everyone else). */
+export function navItemsFor(meInfo: MeResponse): NavItem[] {
+  const items: NavItem[] = [
+    { href: "/", label: "Ask" },
+    { href: "/documents/", label: "Documents" },
+  ];
+  if (meInfo.is_admin) items.push({ href: "/activity/", label: "Activity" });
+  return items;
+}
+
+function isActive(href: string, pathname: string | null): boolean {
+  if (!pathname) return false;
+  const norm = (p: string) => (p.endsWith("/") ? p : `${p}/`);
+  return href === "/" ? pathname === "/" : norm(pathname) === norm(href);
+}
+
+function CenteredPage({ children }: { children: React.ReactNode }) {
+  return <div className="flex min-h-screen items-center justify-center p-4 sm:p-6">{children}</div>;
+}
+
 export function NoAccessPanel({
   meInfo,
   onSignOut,
@@ -54,18 +75,19 @@ export function NoAccessPanel({
   onSignOut: () => void;
 }) {
   return (
-    <div className="min-h-screen flex items-center justify-center p-6">
-      <div className="max-w-md w-full space-y-4">
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          <div className="font-medium">No access yet</div>
-          <p className="mt-1">
+    <CenteredPage>
+      <div className="w-full max-w-md space-y-4">
+        <Wordmark />
+        <div className="rounded-sm border border-field bg-panel px-5 py-5 text-sm">
+          <h1 className="text-xl font-semibold text-ink">No access yet</h1>
+          <p className="mt-2 text-muted">
             You&apos;re signed in, but your account hasn&apos;t been added to any
             engagement. Ask an administrator to grant you access, then reload this page.
           </p>
         </div>
         <UserPanel meInfo={meInfo} onSignOut={onSignOut} />
       </div>
-    </div>
+    </CenteredPage>
   );
 }
 
@@ -87,11 +109,14 @@ export function ShellView({
   onSignOut: () => void;
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
+  const [menuOpen, setMenuOpen] = useState(false);
+
   if (state.kind === "loading") {
     return (
-      <div className="min-h-screen flex items-center justify-center text-sm text-slate-400">
-        Loading...
-      </div>
+      <CenteredPage>
+        <Spinner label="Loading..." />
+      </CenteredPage>
     );
   }
 
@@ -101,11 +126,11 @@ export function ShellView({
 
   if (state.kind === "error") {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6">
-        <div className="max-w-md w-full">
+      <CenteredPage>
+        <div className="w-full max-w-md">
           <ErrorBanner error={state.error} />
         </div>
-      </div>
+      </CenteredPage>
     );
   }
 
@@ -115,40 +140,66 @@ export function ShellView({
   }
 
   const engagementOptions = engagementOptionsFor(meInfo);
-  const showManagementLink =
-    meInfo.is_admin || meInfo.clearance >= MANAGEMENT_CLEARANCE_THRESHOLD;
+  const nav = navItemsFor(meInfo);
 
   return (
-    <MeContext.Provider
-      value={{ meInfo, engagementOptions, engagement, setEngagement }}
-    >
-      <div className="min-h-screen flex">
-        <aside className="w-64 border-r border-slate-200 bg-white p-4 space-y-4">
-          <div className="font-semibold text-slate-800">ConsultRAG</div>
-          <UserPanel meInfo={meInfo} onSignOut={onSignOut} />
-          <EngagementSelector
-            options={engagementOptions}
-            value={engagement}
-            onChange={setEngagement}
-          />
-          <nav className="space-y-1 pt-2 text-sm">
-            <Link
-              href="/"
-              className="block rounded px-2 py-1 text-slate-600 hover:bg-slate-100"
-            >
-              Query
-            </Link>
-            {showManagementLink ? (
-              <Link
-                href="/management"
-                className="block rounded px-2 py-1 text-slate-600 hover:bg-slate-100"
-              >
-                Management
-              </Link>
-            ) : null}
-          </nav>
+    <MeContext.Provider value={{ meInfo, engagementOptions, engagement, setEngagement }}>
+      <div className="min-h-screen lg:flex">
+        {/* Phone and tablet: a top bar with a menu button. */}
+        <div className="on-dark flex items-center justify-between border-b border-side-border bg-side-bg px-5 py-2 lg:hidden">
+          <Wordmark surface="dark" size={22} />
+          <button
+            type="button"
+            className="min-h-target min-w-target rounded-sm border border-side-border px-3 text-sm text-side-text transition-colors hover:bg-side-raised"
+            aria-expanded={menuOpen}
+            aria-controls="app-sidebar"
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            {menuOpen ? "Close menu" : "Menu"}
+          </button>
+        </div>
+
+        <aside
+          id="app-sidebar"
+          aria-label="Main"
+          className={`on-dark border-side-border bg-side-bg px-5 py-5 lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-72 lg:shrink-0 lg:flex-col lg:overflow-y-auto lg:border-r ${menuOpen ? "block" : "hidden"} lg:block`}
+        >
+          <div className="hidden lg:block">
+            <Wordmark surface="dark" />
+          </div>
+          <div className="space-y-6 lg:mt-8 lg:flex lg:flex-1 lg:flex-col">
+            <EngagementSelector options={engagementOptions} value={engagement} onChange={setEngagement} />
+            <nav aria-label="Sections">
+              <ul className="space-y-1">
+                {nav.map((item) => {
+                  const active = isActive(item.href, pathname);
+                  return (
+                    <li key={item.href}>
+                      <Link
+                        href={item.href}
+                        aria-current={active ? "page" : undefined}
+                        onClick={() => setMenuOpen(false)}
+                        className={`flex min-h-target items-center rounded-sm px-3 text-base font-medium transition-colors ${
+                          active ? "bg-accent text-on-accent" : "text-side-text hover:bg-side-raised"
+                        }`}
+                      >
+                        {item.label}
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </nav>
+            <div className="space-y-5 lg:mt-auto">
+              <ThemeControl />
+              <UserPanel meInfo={meInfo} onSignOut={onSignOut} dark />
+            </div>
+          </div>
         </aside>
-        <main className="flex-1 p-6">{children}</main>
+
+        <main className="min-w-0 flex-1 px-4 py-6 sm:px-8 lg:py-10">
+          <div className="mx-auto w-full max-w-page">{children}</div>
+        </main>
       </div>
     </MeContext.Provider>
   );

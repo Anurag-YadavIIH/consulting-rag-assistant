@@ -58,3 +58,12 @@ def test_clearance_enforced(tmp_path):
     low = User.make("u2", roles=["analyst", "engagement:acme"], clearance=1)
     results = engine.retrieve("imaging market growth", low)
     assert results == []
+
+
+def test_extractive_trailer_has_no_em_dash():
+    # The UI shows this text as-is; keep it free of em dashes.
+    from consultrag.rag import ExtractiveLLM
+
+    out = ExtractiveLLM().complete("system", "QUESTION: q\n\nCONTEXT:\n[1] Source: a.txt\nSome text.")
+    assert "(Offline extractive mode. Connect an LLM backend for synthesis.)" in out
+    assert "—" not in out

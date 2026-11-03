@@ -137,5 +137,14 @@ class HybridRetriever:
         sparse = self._bm25.search(
             query_text, top_k=max(self.bm25_k, fused_k), engagement=engagement
         )
+        # Label what each item's "score" is. Fusion keeps the first copy of a
+        # chunk it sees (dense first), so a chunk found by both keeps its
+        # cosine similarity; a keyword-only chunk carries a raw BM25 score,
+        # which is on a different, unbounded scale and must not be shown or
+        # compared as if it were a similarity.
+        for item in dense:
+            item.setdefault("score_kind", "similarity")
+        for item in sparse:
+            item.setdefault("score_kind", "keyword")
         fused = _rrf_fuse([dense, sparse], k=self.rrf_k)
         return fused[:fused_k]

@@ -213,3 +213,90 @@ def test_draft_citations_have_number_and_text(env):
                   headers=_bearer(analyst()))
     cit = resp.json()["citations"][0]
     assert cit["number"] == 1 and "OPEN_TOKEN" in cit["text"]
+
+
+# --- answer structure: mode and quotes ------------------------------------------------
+
+
+def test_extractive_answer_returns_structured_quotes_and_unchanged_text(env):
+    c, *_ = env
+    body = c.post("/query", json={"question": "OPEN_TOKEN reimbursement", "engagement": "acme"},
+                  headers=_bearer(analyst())).json()
+    assert body["mode"] == "extractive"
+    assert body["quotes"] == [{"number": 1, "text": body["citations"][0]["text"]}]
+    # The plain-text answer is untouched for the CLI and older clients.
+    assert body["answer"].startswith("Based on the retrieved material:")
+    assert "[1] Source: open.txt" in body["answer"]
+
+
+def test_draft_returns_the_same_structure(env):
+    c, *_ = env
+    body = c.post("/draft", json={"topic": "OPEN_TOKEN reimbursement", "engagement": "acme"},
+                  headers=_bearer(analyst())).json()
+    assert body["mode"] == "extractive" and body["quotes"][0]["number"] == 1
+    assert body["draft"].startswith("Based on the retrieved material:")
+
+
+def test_not_found_is_identical_for_empty_and_hidden_only_engagements(env):
+    c, _, engine, _, put, _ = env
+    put("secret_only.txt", "Initech SECRET_INITECH_TOKEN board plan.", engagement="initech", clearance=3)
+    engine.retriever.refresh()
+    hidden_only = User.make("5", roles=["analyst", "engagement:initech"], clearance=1)
+    empty = User.make("6", roles=["analyst", "engagement:hooli"], clearance=1)
+    q = {"question": "SECRET_INITECH_TOKEN board plan"}
+    a = c.post("/query", json={**q, "engagement": "initech"}, headers=_bearer(hidden_only)).json()
+    b = c.post("/query", json={**q, "engagement": "hooli"}, headers=_bearer(empty)).json()
+    expected = {"answer": "I couldn't find this in the documents you can access.",
+                "citations": [], "mode": "extractive", "quotes": []}
+    assert a == expected and b == expected
+
+
+def test_generative_mode_has_no_quotes():
+    from consultrag.embeddings import HashEmbedder as HE
+
+    class Writer:
+        def complete(self, system, user):
+            return "A written summary citing [1]."
+
+    store = NumpyVectorStore(dim=64)
+    pipeline = IngestionPipeline(embedder=HE(dim=64), store=store)
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        f = Path(tmp) / "x.txt"
+        f.write_text("Some acme text.")
+        pipeline.ingest_path(f, engagement="acme")
+    engine = RAGEngine(embedder=HE(dim=64), store=store, llm=Writer())
+    ans = engine.answer("acme text", analyst(), engagement="acme")
+    assert ans.mode == "generative" and ans.quotes == [] and ans.text == "A written summary citing [1]."
+
+
+def test_citation_scores_say_what_they_measure(env):
+    c, *_ = env
+    body = c.post("/query", json={"question": "OPEN_TOKEN reimbursement", "engagement": "acme"},
+                  headers=_bearer(analyst())).json()
+    assert body["citations"]
+    for cit in body["citations"]:
+        assert cit["score_kind"] in ("similarity", "keyword")
+        if cit["score_kind"] == "similarity":
+            assert -1.0 <= cit["score"] <= 1.0
+
+
+def test_hybrid_retriever_labels_dense_and_keyword_only_results():
+    import numpy as np
+
+    from consultrag.retrieval import HybridRetriever
+    from consultrag.vectorstore import StoredChunk
+
+    store = NumpyVectorStore(dim=4)
+    store.add(np.array([[1, 0, 0, 0], [0.9, 0.1, 0, 0], [0, 0, 1, 0]], dtype=np.float32), [
+        StoredChunk(chunk_id="dense1", text="unrelated words", metadata={}),
+        StoredChunk(chunk_id="dense2", text="other words", metadata={}),
+        StoredChunk(chunk_id="kw", text="ZEBRA token here", metadata={}),
+    ])
+    # Dense returns only the two closest (kw is far away), so kw can only
+    # arrive through the keyword leg.
+    r = HybridRetriever(store, dense_k=2, bm25_k=1)
+    out = {i["chunk_id"]: i["score_kind"]
+           for i in r.retrieve(np.array([1, 0, 0, 0], dtype=np.float32), "ZEBRA", fused_k=2)}
+    assert out["dense1"] == "similarity"
+    assert out["kw"] == "keyword"

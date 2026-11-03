@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends
 from ...rag import RAGEngine
 from ...security.access import User
 from ..deps import get_current_app_user, get_rag_engine
-from ..schemas import CitationResponse, DraftRequest, DraftResponse
+from ..schemas import CitationResponse, QuoteResponse, DraftRequest, DraftResponse
 from .query import _require_engagement_membership, _require_some_access
 
 router = APIRouter(tags=["draft"])
@@ -40,8 +40,10 @@ def draft(
         citations=[
             CitationResponse(
                 number=c.number, source_path=c.source_path, locator=c.locator,
-                score=c.score, text=c.text,
+                score=c.score, text=c.text, score_kind=c.score_kind,
             )
             for c in answer.citations
         ],
+        mode=answer.mode,
+        quotes=[QuoteResponse(number=q.number, text=q.text) for q in answer.quotes],
     )

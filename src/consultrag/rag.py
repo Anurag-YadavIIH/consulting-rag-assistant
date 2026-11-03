@@ -14,7 +14,7 @@ carries the supporting chunks so a user can verify every claim.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from .audit import AuditLog
@@ -52,6 +52,22 @@ class Citation:
     # The chunk's stored text: redacted at ingestion, and only ever from a
     # chunk that passed the caller's access filter.
     text: str
+    # What `score` measures: "similarity" (dense cosine, 0 to 1), "keyword"
+    # (raw BM25, a different and unbounded scale) or "other" (a retriever
+    # that doesn't say). Not a confidence and not comparable across kinds.
+    score_kind: str = "other"
+
+
+@dataclass
+class Quote:
+    """A passage the answer quotes verbatim, by citation number."""
+    number: int
+    text: str
+
+
+# Shown when nothing the caller may see was retrieved. Says nothing about
+# whether documents they can't see exist.
+NOT_FOUND_TEXT = "I couldn't find this in the documents you can access."
 
 
 @dataclass
@@ -59,6 +75,11 @@ class Answer:
     text: str
     citations: list[Citation]
     used_chunks: list[dict]
+    # "extractive" (the answer quotes passages; `quotes` lists them) or
+    # "generative" (a model wrote `text`; `quotes` is empty). `text` stays
+    # the full plain-text answer either way, for /draft and the CLI.
+    mode: str = "extractive"
+    quotes: list[Quote] = field(default_factory=list)
 
 
 def _format_context(chunks: list[dict]) -> str:
@@ -117,7 +138,7 @@ class ExtractiveLLM:
         first = context.strip().split("\n\n")[0]
         return (
             "Based on the retrieved material:\n\n" + first +
-            "\n\n(Offline extractive mode — connect an LLM backend for synthesis.)"
+            "\n\n(Offline extractive mode. Connect an LLM backend for synthesis.)"
         )
 
 
@@ -195,9 +216,10 @@ class RAGEngine:
                 answer_text=None, token_usage=None,
             )
             return Answer(
-                text="No accessible material matched this question.",
+                text=NOT_FOUND_TEXT,
                 citations=[],
                 used_chunks=[],
+                mode=self.mode,
             )
         context = _format_context(chunks)
         user_prompt = f"QUESTION: {query}\n\nCONTEXT:\n{context}"
@@ -211,6 +233,7 @@ class RAGEngine:
                 locator=c["metadata"].get("locator", ""),
                 score=c["score"],
                 text=c["text"],
+                score_kind=c.get("score_kind", "other"),
             )
             for i, c in enumerate(chunks, start=1)
         ]
@@ -222,4 +245,12 @@ class RAGEngine:
             answer_text=text,
             token_usage=getattr(self.llm, "last_usage", None),
         )
-        return Answer(text=text, citations=citations, used_chunks=chunks)
+        # ExtractiveLLM answers with the first context block, so its quote is
+        # citation 1's passage: structured here so clients needn't parse text.
+        quotes = [Quote(number=1, text=chunks[0]["text"])] if self.mode == "extractive" else []
+        return Answer(text=text, citations=citations, used_chunks=chunks,
+                      mode=self.mode, quotes=quotes)
+
+    @property
+    def mode(self) -> str:
+        return "extractive" if isinstance(self.llm, ExtractiveLLM) else "generative"

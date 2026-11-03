@@ -56,7 +56,7 @@ def test_query_happy_path_parses_correctly():
 
 
 def test_query_with_no_citations_parses_correctly():
-    body = {"answer": "No accessible material matched this question.", "citations": []}
+    body = {"answer": "I couldn't find this in the documents you can access.", "citations": []}
     with patch("httpx.post", return_value=_response(200, body)):
         result = query("anything")
     assert result.citations == []

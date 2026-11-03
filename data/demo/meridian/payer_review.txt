@@ -1,0 +1,7 @@
+Meridian Health: payer reimbursement review
+
+The payer review found that reimbursement for outpatient procedures takes 47 days on average from claim submission to payment, against a contract term of 30 days.
+
+Most of the delay comes from claims returned for missing prior-authorisation numbers. Claims submitted with complete documentation were paid in 28 days.
+
+The review recommends a pre-submission check for prior-authorisation numbers, which it estimates would bring the average down to about 32 days within two quarters. Contact for the finance workstream: billing.lead@meridian-health.example.

@@ -1,23 +1,10 @@
 "use client";
 
 import { useMeContext } from "../lib/meContext";
-import { QueryPanel } from "../components/QueryPanel";
-import { IngestPanel } from "../components/IngestPanel";
+import { AskWorkspace } from "../components/ask/AskWorkspace";
 
-export default function HomePage() {
+export default function AskPage() {
   const { engagement } = useMeContext();
-
-  return (
-    <div className="max-w-3xl space-y-10">
-      <section>
-        <h1 className="text-lg font-semibold text-slate-800 mb-4">Ask a question</h1>
-        <QueryPanel engagement={engagement} />
-      </section>
-
-      <section>
-        <h2 className="text-lg font-semibold text-slate-800 mb-4">Ingest a document</h2>
-        <IngestPanel engagement={engagement} />
-      </section>
-    </div>
-  );
+  // Keyed by engagement so switching engagements starts a fresh workspace.
+  return <AskWorkspace key={engagement ?? "none"} engagement={engagement} />;
 }

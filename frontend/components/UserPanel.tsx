@@ -1,42 +1,41 @@
 import type { MeResponse } from "../lib/api";
+import { Badge } from "./ui/Badge";
+import { Button } from "./ui/Button";
 
+/** The signed-in user. `dark` is the sidebar version; otherwise a panel. */
 export function UserPanel({
   meInfo,
   onSignOut,
+  dark = false,
 }: {
   meInfo: MeResponse;
   onSignOut?: () => void;
+  dark?: boolean;
 }) {
+  const text = dark ? "text-side-text" : "text-ink";
+  const muted = dark ? "text-side-muted" : "text-muted";
   return (
-    <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 text-sm">
-      <div className="font-medium text-slate-500 uppercase text-xs tracking-wide mb-2">
-        Signed in as
-      </div>
-      <div className="text-slate-800 break-all">
+    <div className={dark ? "border-t border-side-border pt-4" : "rounded-sm border border-rule bg-panel p-4"}>
+      <p className={`text-xs ${muted}`}>Signed in as</p>
+      <p className={`mt-0.5 break-all text-sm font-medium ${text}`}>
         {meInfo.email ? meInfo.email : "Development user (no sign-in)"}
-      </div>
-      <div className="mt-1 text-slate-500 text-xs">
-        User #{" "}
-        <span className="font-mono bg-slate-200 rounded px-1.5 py-0.5">{meInfo.user_id}</span>
-      </div>
-      <div className="mt-2 text-slate-600">Clearance: {meInfo.clearance}</div>
-      {meInfo.is_admin && meInfo.engagements.length === 0 ? (
-        <div className="mt-1 inline-block rounded bg-indigo-100 text-indigo-700 text-xs font-medium px-2 py-0.5">
-          Admin, all engagements
-        </div>
-      ) : meInfo.is_admin ? (
-        <div className="mt-1 inline-block rounded bg-indigo-100 text-indigo-700 text-xs font-medium px-2 py-0.5">
-          Admin
-        </div>
-      ) : null}
+      </p>
+      <p className={`mt-1 flex flex-wrap items-center gap-x-2 text-xs ${muted}`}>
+        <span>
+          User # <span className="font-mono">{meInfo.user_id}</span>
+        </span>
+        <span aria-hidden="true">·</span>
+        <span>Clearance {meInfo.clearance}</span>
+        {meInfo.is_admin ? (
+          <Badge tone={dark ? "sidebar" : "neutral"}>
+            {meInfo.engagements.length === 0 ? "Admin, all engagements" : "Admin"}
+          </Badge>
+        ) : null}
+      </p>
       {onSignOut ? (
-        <button
-          type="button"
-          onClick={onSignOut}
-          className="mt-3 block w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-slate-700 hover:bg-slate-100"
-        >
+        <Button variant={dark ? "sidebar" : "secondary"} className="mt-3 w-full" onClick={onSignOut}>
           Sign out
-        </button>
+        </Button>
       ) : null}
     </div>
   );

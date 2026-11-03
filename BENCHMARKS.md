@@ -331,3 +331,45 @@ its *contribution to the fused candidate pool* is specifically what gives
 the reranker enough material to do well on multi-source questions. Dropping
 BM25 would trade that away for no measured gain on the metrics that matter
 here.
+
+---
+
+## 2026-11-03: can a minimum-similarity threshold detect "not in the documents"?
+
+**Question:** could the API refuse to answer when nothing relevant is found,
+using a minimum score? **Answer: not with the scores available today.**
+
+**Which score:** the score on a fused result isn't one scale. A chunk found
+by dense search carries its cosine similarity (0 to 1); a chunk found only by
+BM25 carries a raw, unbounded BM25 score; reranking adds a separate
+`rerank_score`. The only score comparable across questions is the dense
+cosine similarity, so that's what was measured.
+
+**Setup:** the 214-chunk corpus above (`data/sample` + `data/corpus`), local
+`BAAI/bge-small-en-v1.5`, the 60-question gold set, dense cosine of every
+chunk for every question.
+
+| Dense cosine | min | median | max |
+|---|---|---|---|
+| Best relevant chunk, answerable (50) | 0.494 | 0.766 | 0.893 |
+| Top result, unanswerable (6) | 0.626 | 0.727 | 0.753 |
+| Irrelevant results in the top 5 (249) | 0.490 | 0.691 | 0.887 |
+
+| Threshold | Answerable or partial wrongly refused (of 54) | Unanswerable correctly refused (of 6) |
+|---|---|---|
+| 0.55 | 1 | 0 |
+| 0.60 | 3 | 0 |
+| 0.65 | 8 | 2 |
+| 0.70 | 13 | 2 |
+| 0.75 | 22 | 5 |
+
+Every unanswerable question's top result scores inside the answerable range,
+so no threshold separates them without refusing many answerable questions.
+**No threshold was applied.** Retrieval metrics are unchanged by this work:
+hit@5 0.833, MRR@5 0.682, recall@5 0.796, the same as the baseline above.
+
+**Future work, not built:** a cross-encoder relevance score
+(`BAAI/bge-reranker-base`, about 1.1 GB, a few seconds per question on the
+1 vCPU container) may separate the two groups and should be measured the
+same way first; or a grounded generative model instructed to say when the
+passages don't answer the question.

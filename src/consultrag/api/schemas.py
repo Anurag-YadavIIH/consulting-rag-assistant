@@ -63,11 +63,26 @@ class CitationResponse(BaseModel):
     score: float
     # Redacted passage text from a chunk the caller is allowed to see.
     text: str
+    # "similarity" (dense cosine, 0 to 1), "keyword" (raw BM25, a different
+    # unbounded scale) or "other". Scores are not confidences.
+    score_kind: str = "other"
+
+
+class QuoteResponse(BaseModel):
+    number: int
+    # Redacted passage text, the same as citation `number`'s text.
+    text: str
 
 
 class QueryResponse(BaseModel):
+    # Plain-text answer, unchanged (the CLI and older clients use it).
     answer: str
     citations: list[CitationResponse]
+    # "extractive": `quotes` lists the passages the answer quotes, by
+    # citation number, so a client can show them without parsing `answer`.
+    # "generative": `quotes` is empty and `answer` is the model's text.
+    mode: str = "extractive"
+    quotes: list[QuoteResponse] = []
 
 
 class DocumentInfo(BaseModel):
@@ -115,3 +130,5 @@ class DraftRequest(BaseModel):
 class DraftResponse(BaseModel):
     draft: str
     citations: list[CitationResponse]
+    mode: str = "extractive"
+    quotes: list[QuoteResponse] = []

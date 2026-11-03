@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from ...rag import RAGEngine
 from ...security.access import AccessPolicy, User
 from ..deps import get_current_app_user, get_rag_engine
-from ..schemas import CitationResponse, QueryRequest, QueryResponse
+from ..schemas import CitationResponse, QuoteResponse, QueryRequest, QueryResponse
 
 router = APIRouter(tags=["query"])
 
@@ -58,8 +58,10 @@ def query(
         citations=[
             CitationResponse(
                 number=c.number, source_path=c.source_path, locator=c.locator,
-                score=c.score, text=c.text,
+                score=c.score, text=c.text, score_kind=c.score_kind,
             )
             for c in answer.citations
         ],
+        mode=answer.mode,
+        quotes=[QuoteResponse(number=q.number, text=q.text) for q in answer.quotes],
     )

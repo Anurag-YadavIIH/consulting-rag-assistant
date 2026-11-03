@@ -18,3 +18,11 @@ export const API_LOCATION_LABEL = API_BASE_URL === "" ? "this site's API" : `the
 /** Google OAuth web client ID. Public (it identifies the app, it isn't a
  * secret); the API checks ID tokens against the same value (OAUTH_AUDIENCE). */
 export const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
+
+/** The API currently always answers in extractive mode: it quotes the most
+ * relevant passages rather than writing a summary (api/deps.py never
+ * configures a generative model, and responses don't report the mode). If a
+ * generative model is wired in, the API should return the mode and this
+ * note should follow it. */
+export const ANSWER_STYLE_NOTE =
+  "Quoted from your documents, ranked by similarity. These may not fully answer your question, so check the source.";

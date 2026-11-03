@@ -1,3 +1,139 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/*
+ * Theme colours as RGB channels (for Tailwind's opacity modifiers). Values
+ * mirror lib/themeTokens.ts; __tests__/designTokens.test.ts checks they match.
+ *
+ * Light is the default. Dark applies when the user picks it
+ * (html[data-theme="dark"]) or picks System and the OS prefers dark (no
+ * data-theme attribute). public/theme-init.js sets the attribute before the
+ * page paints, so a saved choice doesn't flash the other theme.
+ */
+@layer base {
+  :root {
+    color-scheme: light;
+    --c-ground: 238 243 248; /* #EEF3F8 */
+    --c-panel: 255 255 255; /* #FFFFFF */
+    --c-raised: 244 247 249; /* #F4F7F9 */
+    --c-ink: 21 33 30; /* #15211E */
+    --c-muted: 77 92 87; /* #4D5C57 */
+    --c-rule: 200 210 206; /* #C8D2CE */
+    --c-field: 118 135 130; /* #768782 */
+    --c-link: 31 95 153; /* #1F5F99 */
+    --c-focus: 31 95 153; /* #1F5F99 */
+    --c-accent: 124 196 255; /* #7CC4FF */
+    --c-on-accent: 21 33 30; /* #15211E */
+    --c-accent-muted: 207 231 251; /* #CFE7FB */
+    --c-on-accent-muted: 61 85 104; /* #3D5568 */
+    --c-highlight: 252 231 168; /* #FCE7A8 */
+    --c-brand-strong: 21 33 30; /* #15211E */
+    --c-redact: 21 33 30; /* #15211E */
+    --c-redact-edge: 21 33 30; /* #15211E */
+    --c-danger: 138 28 28; /* #8A1C1C */
+    --c-danger-bg: 251 234 234; /* #FBEAEA */
+    --c-ok: 30 91 52; /* #1E5B34 */
+    --c-ok-bg: 229 243 234; /* #E5F3EA */
+    --c-side-bg: 21 33 30; /* #15211E */
+    --c-side-raised: 36 51 48; /* #243330 */
+    --c-side-text: 230 237 234; /* #E6EDEA */
+    --c-side-muted: 167 182 177; /* #A7B6B1 */
+    --c-side-border: 58 74 70; /* #3A4A46 */
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --c-ground: 15 23 22; /* #0F1716 */
+    --c-panel: 24 35 33; /* #182321 */
+    --c-raised: 34 48 45; /* #22302D */
+    --c-ink: 238 243 248; /* #EEF3F8 */
+    --c-muted: 183 196 191; /* #B7C4BF */
+    --c-rule: 58 74 70; /* #3A4A46 */
+    --c-field: 110 129 123; /* #6E817B */
+    --c-link: 154 210 255; /* #9AD2FF */
+    --c-focus: 124 196 255; /* #7CC4FF */
+    --c-accent: 124 196 255; /* #7CC4FF */
+    --c-on-accent: 21 33 30; /* #15211E */
+    --c-accent-muted: 42 66 86; /* #2A4256 */
+    --c-on-accent-muted: 195 211 224; /* #C3D3E0 */
+    --c-highlight: 74 63 30; /* #4A3F1E */
+    --c-brand-strong: 124 196 255; /* #7CC4FF */
+    --c-redact: 0 0 0; /* #000000 */
+    --c-redact-edge: 183 196 191; /* #B7C4BF */
+    --c-danger: 255 180 180; /* #FFB4B4 */
+    --c-danger-bg: 58 28 28; /* #3A1C1C */
+    --c-ok: 168 224 188; /* #A8E0BC */
+    --c-ok-bg: 23 51 35; /* #173323 */
+    --c-side-bg: 18 29 27; /* #121D1B */
+    --c-side-raised: 34 48 45; /* #22302D */
+    --c-side-text: 238 243 248; /* #EEF3F8 */
+    --c-side-muted: 183 196 191; /* #B7C4BF */
+    --c-side-border: 58 74 70; /* #3A4A46 */
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --c-ground: 15 23 22; /* #0F1716 */
+      --c-panel: 24 35 33; /* #182321 */
+      --c-raised: 34 48 45; /* #22302D */
+      --c-ink: 238 243 248; /* #EEF3F8 */
+      --c-muted: 183 196 191; /* #B7C4BF */
+      --c-rule: 58 74 70; /* #3A4A46 */
+      --c-field: 110 129 123; /* #6E817B */
+      --c-link: 154 210 255; /* #9AD2FF */
+      --c-focus: 124 196 255; /* #7CC4FF */
+      --c-accent: 124 196 255; /* #7CC4FF */
+      --c-on-accent: 21 33 30; /* #15211E */
+      --c-accent-muted: 42 66 86; /* #2A4256 */
+      --c-on-accent-muted: 195 211 224; /* #C3D3E0 */
+      --c-highlight: 74 63 30; /* #4A3F1E */
+      --c-brand-strong: 124 196 255; /* #7CC4FF */
+      --c-redact: 0 0 0; /* #000000 */
+      --c-redact-edge: 183 196 191; /* #B7C4BF */
+      --c-danger: 255 180 180; /* #FFB4B4 */
+      --c-danger-bg: 58 28 28; /* #3A1C1C */
+      --c-ok: 168 224 188; /* #A8E0BC */
+      --c-ok-bg: 23 51 35; /* #173323 */
+      --c-side-bg: 18 29 27; /* #121D1B */
+      --c-side-raised: 34 48 45; /* #22302D */
+      --c-side-text: 238 243 248; /* #EEF3F8 */
+      --c-side-muted: 183 196 191; /* #B7C4BF */
+      --c-side-border: 58 74 70; /* #3A4A46 */
+    }
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-ground font-sans text-base leading-7 text-ink antialiased;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-display;
+  }
+
+  /* Visible keyboard focus: the theme's focus colour on main surfaces, the
+     accent on the always-dark sidebar. */
+  :focus-visible {
+    outline: 3px solid rgb(var(--c-focus));
+    outline-offset: 2px;
+  }
+  .on-dark :focus-visible {
+    outline-color: rgb(var(--c-accent));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

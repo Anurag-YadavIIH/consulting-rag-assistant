@@ -94,3 +94,28 @@ it("engagement options: memberships for members, never the fallback for non-admi
   expect(engagementOptionsFor(member)).toEqual(["acme"]);
   expect(engagementOptionsFor(unknownAccount)).toEqual([]);
 });
+
+// --- navigation ----------------------------------------------------------------
+
+it("Activity is in the sidebar for admins only", async () => {
+  const { navItemsFor } = await import("../components/AppShell");
+  expect(navItemsFor(member).map((n) => n.label)).toEqual(["Ask", "Documents"]);
+  expect(navItemsFor({ ...admin, engagements: ["acme"] }).map((n) => n.label)).toEqual([
+    "Ask",
+    "Documents",
+    "Activity",
+  ]);
+
+  const memberHtml = view({ kind: "ready", meInfo: member });
+  expect(memberHtml).not.toContain('href="/activity/"');
+  expect(memberHtml).toContain('href="/documents/"');
+  const adminHtml = view({ kind: "ready", meInfo: { ...admin, engagements: ["acme"] } });
+  expect(adminHtml).toContain('href="/activity/"');
+});
+
+it("the sidebar has a labelled menu button for small screens", () => {
+  const out = view({ kind: "ready", meInfo: member });
+  expect(out).toContain('aria-controls="app-sidebar"');
+  expect(out).toContain('aria-expanded="false"');
+  expect(out).toContain('id="engagement-select"');
+});

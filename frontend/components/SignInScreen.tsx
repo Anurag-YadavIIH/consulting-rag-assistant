@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { isGoogleSignInConfigured, renderGoogleSignInButton } from "../lib/auth";
+import { Wordmark } from "./Logo";
 
 /** Shown whenever there's no session. Renders no app data. */
 export function SignInScreen({
@@ -25,23 +26,30 @@ export function SignInScreen({
   }, [configured, onCredential]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6">
-      <div className="max-w-sm w-full rounded-lg border border-slate-200 bg-white p-6 space-y-4 text-center">
-        <div className="font-semibold text-slate-800">ConsultRAG</div>
-        <p className="text-sm text-slate-600">Sign in with your Google account to continue.</p>
-        {configured ? (
-          <div ref={buttonRef} className="flex justify-center" data-testid="google-button" />
-        ) : (
-          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            Google sign-in isn&apos;t configured. Set NEXT_PUBLIC_GOOGLE_CLIENT_ID and rebuild.
+    <div className="flex min-h-screen items-center justify-center p-4 sm:p-6">
+      <div className="w-full max-w-md border border-rule bg-panel">
+        <div className="on-dark flex items-center bg-side-bg px-6 py-5">
+          <Wordmark surface="dark" size={28} />
+        </div>
+        <div className="space-y-5 px-6 py-7 text-center">
+          <div>
+            <h1 className="text-xl font-semibold text-ink">Evidence-cited answers</h1>
+            <p className="mt-1 text-base text-muted">Sign in with your Google account to continue.</p>
           </div>
-        )}
-        {busy ? <p className="text-sm text-slate-500">Signing in...</p> : null}
-        {error || loadError ? (
-          <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
-            {error ?? loadError}
-          </div>
-        ) : null}
+          {configured ? (
+            <div ref={buttonRef} className="flex min-h-target justify-center" data-testid="google-button" />
+          ) : (
+            <div className="rounded-sm border border-field bg-raised px-3 py-2 text-sm text-ink">
+              Google sign-in isn&apos;t configured. Set NEXT_PUBLIC_GOOGLE_CLIENT_ID and rebuild.
+            </div>
+          )}
+          {busy ? <p role="status" className="text-sm text-muted">Signing in...</p> : null}
+          {error || loadError ? (
+            <div role="alert" className="rounded-sm border border-danger bg-danger-bg px-3 py-2 text-sm text-danger">
+              {error ?? loadError}
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );

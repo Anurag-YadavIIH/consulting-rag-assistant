@@ -48,11 +48,11 @@ export function ErrorBanner({ error }: { error: unknown }) {
 
   const toneClasses =
     tone === "warning"
-      ? "bg-amber-50 border-amber-300 text-amber-800"
-      : "bg-red-50 border-red-300 text-red-800";
+      ? "border-field bg-raised text-ink"
+      : "border-danger bg-danger-bg text-danger";
 
   return (
-    <div className={`rounded-md border px-4 py-3 text-sm ${toneClasses}`}>
+    <div role="alert" className={`rounded-sm border px-4 py-3 text-sm ${toneClasses}`}>
       {message}
     </div>
   );

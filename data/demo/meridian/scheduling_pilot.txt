@@ -1,0 +1,7 @@
+Meridian Health: outpatient scheduling pilot review
+
+The outpatient scheduling pilot ran for twelve weeks across three clinics. It aimed to cut the average wait for a first appointment from 19 days to 12 days, and reached 15 days.
+
+The pilot missed its target mainly because referral letters still arrived by fax at two of the three clinics, so the new booking tool started each case a day or more late. Staffing gaps on Fridays added further delay.
+
+Next steps: move the two remaining clinics to electronic referrals before a second pilot, and add Friday cover. For questions, the pilot lead is Dana Whitfield (dana.whitfield@meridian-health.example).

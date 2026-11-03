@@ -629,6 +629,37 @@ Limitations:
   there; anywhere else, sign-in needs HTTPS. Hosting is a future step; see
   `docs/aws-deployment.md`.
 
+### The Ask page and what its scores mean
+
+The frontend's Ask page shows the **closest passages** to a question, quoted
+from the documents the user can access, each with a citation button that
+opens the source (filename, location, passage, and redaction bars only where
+the server redacted something). The API answers in extractive mode: it
+quotes passages ranked by similarity and doesn't write a summary, so the page
+says the passages "may not fully answer your question".
+
+- Responses keep the plain-text `answer` (for the CLI and `/draft`) and add
+  `mode` and `quotes`, so clients don't parse text.
+- Each citation has a `score_kind`: `similarity` (dense cosine, 0 to 1) or
+  `keyword` (a raw BM25 score on a different, unbounded scale). Only
+  similarity is shown as a number, and no score is a confidence.
+- When nothing the user can see is retrieved, the answer is "I couldn't
+  find this in the documents you can access." with no citations, the same
+  whether or not hidden documents exist.
+
+**Known limitation:** when something is retrieved, it's shown even if it
+doesn't answer the question. A minimum-similarity threshold was measured and
+can't separate answerable from unanswerable questions on this corpus (see
+`BENCHMARKS.md`, 2026-11-03), so none is applied. A cross-encoder relevance
+score or a grounded generative model are possible future work.
+
+The UI also has Light, Dark and System themes, self-hosted fonts (no runtime
+requests to Google) and a phone layout. `scripts/seed_demo_data.py` loads
+fictional demo engagements (Meridian Health, Kestrel Medical) into a **local**
+Compose database only; it refuses to run with `APP_ENV=production` or a
+non-local database. Tested locally with Docker Compose and in Chrome, **not on
+AWS**.
+
 ### Static export
 
 `next.config.js` sets `output: "export"` and `trailingSlash: true`, so
