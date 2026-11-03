@@ -35,15 +35,23 @@ SYSTEM_PROMPT = (
     "You are a research assistant for management consultants. Answer ONLY using "
     "the provided context. If the context is insufficient, say so plainly. "
     "Cite the source file and locator (slide/page/timestamp) for each claim. "
+    "Refer to sources by their bracketed number from the context, e.g. [1]. "
     "Never invent figures or sources."
 )
 
 
 @dataclass
 class Citation:
+    # `number` matches the [n] the context block was given in the prompt
+    # (1-based, in retrieval order), so an answer that cites [2] means this
+    # passage. Only the extractive mode guarantees the answer uses them.
+    number: int
     source_path: str
     locator: str
     score: float
+    # The chunk's stored text: redacted at ingestion, and only ever from a
+    # chunk that passed the caller's access filter.
+    text: str
 
 
 @dataclass
@@ -167,6 +175,7 @@ class RAGEngine:
                 query=query,
                 retrieved_ids=[c["chunk_id"] for c in reranked],
                 n_blocked=n_blocked,
+                engagement=engagement,
             )
         return reranked
 
@@ -194,13 +203,16 @@ class RAGEngine:
         user_prompt = f"QUESTION: {query}\n\nCONTEXT:\n{context}"
         text = self.llm.complete(system_prompt or SYSTEM_PROMPT, user_prompt)
         latency_ms = (time.perf_counter() - start) * 1000
+        # Same order and numbering as _format_context's [1]..[n].
         citations = [
             Citation(
+                number=i,
                 source_path=c["metadata"].get("source_path", "?"),
                 locator=c["metadata"].get("locator", ""),
                 score=c["score"],
+                text=c["text"],
             )
-            for c in chunks
+            for i, c in enumerate(chunks, start=1)
         ]
         self.tracer.trace_query(
             query=query,

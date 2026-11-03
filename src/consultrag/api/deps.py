@@ -36,6 +36,8 @@ from ..security.access import User
 
 _verifier: OIDCVerifier | None = None
 _embedder = None
+_store = None
+_audit = None
 _engine: RAGEngine | None = None
 _pipeline: IngestionPipeline | None = None
 
@@ -84,25 +86,45 @@ def get_current_app_user(authorization: str | None = Header(None)) -> User:
     )
 
 
-def get_rag_engine() -> RAGEngine:
-    global _embedder, _engine
-    if _engine is None:
+def _get_embedder():
+    global _embedder
+    if _embedder is None:
+        _embedder = LocalEmbedder()
+    return _embedder
+
+
+def _get_store():
+    # One store (one connection pool) shared by the engine, the pipeline and
+    # the audit log.
+    global _store
+    if _store is None:
         from ..pgvectorstore import PgVectorStore
 
-        if _embedder is None:
-            _embedder = LocalEmbedder()
-        store = PgVectorStore.load(dim=_embedder.dim)
-        _engine = RAGEngine(embedder=_embedder, store=store)
+        _store = PgVectorStore.load(dim=_get_embedder().dim)
+    return _store
+
+
+def get_audit_log():
+    """The API's audit log: the audit_events table in Postgres."""
+    global _audit
+    if _audit is None:
+        from ..audit import PgAuditLog
+
+        _audit = PgAuditLog(_get_store().pool)
+    return _audit
+
+
+def get_rag_engine() -> RAGEngine:
+    global _engine
+    if _engine is None:
+        _engine = RAGEngine(embedder=_get_embedder(), store=_get_store(), audit=get_audit_log())
     return _engine
 
 
 def get_ingestion_pipeline() -> IngestionPipeline:
-    global _embedder, _pipeline
+    global _pipeline
     if _pipeline is None:
-        from ..pgvectorstore import PgVectorStore
-
-        if _embedder is None:
-            _embedder = LocalEmbedder()
-        store = PgVectorStore.load(dim=_embedder.dim)
-        _pipeline = IngestionPipeline(embedder=_embedder, store=store)
+        _pipeline = IngestionPipeline(
+            embedder=_get_embedder(), store=_get_store(), audit=get_audit_log()
+        )
     return _pipeline

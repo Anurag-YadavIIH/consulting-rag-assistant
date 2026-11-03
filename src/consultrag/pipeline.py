@@ -8,6 +8,7 @@ chunks were produced.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .audit import AuditLog
@@ -107,9 +108,12 @@ class IngestionPipeline:
         if max_chunks is not None and len(chunks) > max_chunks:
             raise DocumentTooLarge(len(chunks), max_chunks)
 
-        # Attach access-control + caller metadata.
+        # Attach access-control + caller metadata. ingested_at (UTC, ISO 8601)
+        # is what GET /documents reports as the upload time.
+        ingested_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         for c in chunks:
             c.metadata.update(self.default_metadata)
+            c.metadata["ingested_at"] = ingested_at
             if engagement:
                 c.metadata["engagement"] = engagement
             c.metadata["clearance"] = clearance
@@ -124,19 +128,54 @@ class IngestionPipeline:
             StoredChunk(chunk_id=c.chunk_id, text=c.text, metadata=c.metadata)
             for c in chunks
         ]
+        document = source_name if source_name is not None else path.as_posix()
+        # A transactional audit log (PgAuditLog) is written by the store inside
+        # the same transaction as the change, so a failed audit write rolls
+        # the ingest back. Otherwise (the CLI's file log) it's written after.
+        audit_event = None
+        if self.audit is not None and getattr(self.audit, "transactional", False):
+            audit_event = self.audit.ingest_event(
+                user_id=user_id, engagement=engagement, document=document,
+                n_chunks=len(chunks), redaction_counts=total_redactions,
+            )
         if source_name is not None:
             self.store.replace_document(
                 engagement, source_name, vectors, stored,
                 max_existing_clearance=replace_max_clearance,
+                audit_event=audit_event,
             )
         else:
-            self.store.add(vectors, stored)
+            self.store.add(vectors, stored, audit_event=audit_event)
 
-        if self.audit:
+        if self.audit is not None and audit_event is None:
             self.audit.log_ingest(
-                source_path=source_name if source_name is not None else path.as_posix(),
+                source_path=document,
                 n_chunks=len(chunks),
                 redaction_counts=total_redactions,
                 user_id=user_id,
+                engagement=engagement,
             )
         return len(chunks)
+
+    def delete_document(self, engagement: str, name: str, *, user_id: str,
+                        max_existing_clearance: int | None = None) -> int:
+        """Deletes one named document from an engagement; returns the number
+        of chunks removed (0 if there was no such document). Raises
+        DocumentReplaceForbidden if any chunk is above
+        `max_existing_clearance` (the same rule as replacing it). The audit
+        event shares the delete's transaction when the log is transactional."""
+        transactional = self.audit is not None and getattr(self.audit, "transactional", False)
+        factory = None
+        if transactional:
+            def factory(n_chunks: int) -> dict:
+                return self.audit.delete_event(
+                    user_id=user_id, engagement=engagement, document=name, n_chunks=n_chunks
+                )
+        n = self.store.delete_document(
+            engagement, name, max_existing_clearance=max_existing_clearance,
+            audit_event_factory=factory,
+        )
+        if n and self.audit is not None and not transactional:
+            self.audit.log_delete(source_path=name, n_chunks=n, user_id=user_id,
+                                  engagement=engagement)
+        return n

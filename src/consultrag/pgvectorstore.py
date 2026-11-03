@@ -17,7 +17,6 @@ in memory.
 from __future__ import annotations
 
 import re
-import threading
 from pathlib import Path
 
 from .security.access import AccessPolicy, User
@@ -86,115 +85,200 @@ def _row(vec, chunk) -> dict:
 
 
 class PgVectorStore:
-    def __init__(self, dim: int, dsn: str | None = None, table_name: str = "chunks"):
+    """Every operation borrows a connection from a small pool (psycopg_pool),
+    so concurrent requests don't share one transaction, and a connection
+    that has dropped is detected (the pool checks it before handing it out)
+    and replaced instead of breaking every later request. Connections run in
+    autocommit mode: reads never leave a transaction open, and each write
+    runs inside an explicit transaction that commits or rolls back as one,
+    together with its audit event when one is given."""
+
+    def __init__(self, dim: int, dsn: str | None = None, table_name: str = "chunks",
+                 *, min_size: int = 1, max_size: int = 4):
         import psycopg
-        from pgvector.psycopg import register_vector
+        from psycopg_pool import ConnectionPool
 
         from .config import settings
 
         self.dim = dim
         self.table_name = _validate_table_name(table_name)
-        self._conn = psycopg.connect(dsn or settings.database_url, autocommit=False)
-        # The API shares one store (one connection) across request threads, and
-        # a psycopg connection has ONE transaction shared by every thread using
-        # it. Without this lock another request's commit or rollback could land
-        # in the middle of replace_document() and split it in half.
-        self._lock = threading.RLock()
-        register_vector(self._conn)
-        ensure_schema(self._conn, dim, self.table_name)
+        dsn = dsn or settings.database_url
+
+        # Schema first, on a plain connection: the pool's connections register
+        # the pgvector type, which requires the extension to exist.
+        with psycopg.connect(dsn) as conn:
+            ensure_schema(conn, dim, self.table_name)
+
+        self._pool = ConnectionPool(
+            dsn,
+            min_size=min_size,
+            max_size=max_size,
+            # application_name makes the pool's connections identifiable in
+            # pg_stat_activity (and lets tests kill exactly these).
+            kwargs={"autocommit": True, "application_name": f"consultrag-{self.table_name}"},
+            configure=self._configure_connection,
+            check=ConnectionPool.check_connection,
+            name=f"consultrag-{self.table_name}",
+            open=True,
+        )
+
+    @staticmethod
+    def _configure_connection(conn) -> None:
+        from pgvector.psycopg import register_vector
+
+        register_vector(conn)
+
+    @property
+    def pool(self):
+        """Shared with PgAuditLog, so audit writes use the same connections."""
+        return self._pool
+
+    def close(self) -> None:
+        self._pool.close()
 
     def __len__(self) -> int:
-        with self._lock, self._conn.cursor() as cur:
+        with self._pool.connection() as conn, conn.cursor() as cur:
             cur.execute(f"SELECT COUNT(*) FROM {self.table_name}")
             return cur.fetchone()[0]
 
     def all_chunks(self):
         from .vectorstore import StoredChunk
 
-        with self._lock, self._conn.cursor() as cur:
+        with self._pool.connection() as conn, conn.cursor() as cur:
             cur.execute(f"SELECT chunk_id, text, metadata FROM {self.table_name}")
             return [StoredChunk(chunk_id=r[0], text=r[1], metadata=r[2]) for r in cur.fetchall()]
 
-    def add(self, vectors, chunks) -> None:
+    def _check_vectors(self, vectors, chunks) -> None:
         if vectors.shape[0] != len(chunks):
             raise ValueError("vectors and chunks length mismatch")
         if vectors.shape[1] != self.dim:
             raise ValueError(f"expected dim {self.dim}, got {vectors.shape[1]}")
-        with self._lock:
-            try:
-                with self._conn.cursor() as cur:
-                    for vec, chunk in zip(vectors, chunks):
-                        cur.execute(
-                            f"""
-                            INSERT INTO {self.table_name}
-                                (chunk_id, text, embedding, engagement, clearance, metadata)
-                            VALUES (%(chunk_id)s, %(text)s, %(embedding)s, %(engagement)s,
-                                    %(clearance)s, %(metadata)s)
-                            ON CONFLICT (chunk_id) DO UPDATE SET
-                                text = EXCLUDED.text,
-                                embedding = EXCLUDED.embedding,
-                                engagement = EXCLUDED.engagement,
-                                clearance = EXCLUDED.clearance,
-                                metadata = EXCLUDED.metadata
-                            """,
-                            _row(vec, chunk),
-                        )
-                self._conn.commit()
-            except BaseException:
-                # Leave the shared connection usable for the next request.
-                self._conn.rollback()
-                raise
+
+    def add(self, vectors, chunks, *, audit_event: dict | None = None) -> None:
+        from .audit import insert_audit_event
+
+        self._check_vectors(vectors, chunks)
+        with self._pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            for vec, chunk in zip(vectors, chunks):
+                cur.execute(
+                    f"""
+                    INSERT INTO {self.table_name}
+                        (chunk_id, text, embedding, engagement, clearance, metadata)
+                    VALUES (%(chunk_id)s, %(text)s, %(embedding)s, %(engagement)s,
+                            %(clearance)s, %(metadata)s)
+                    ON CONFLICT (chunk_id) DO UPDATE SET
+                        text = EXCLUDED.text,
+                        embedding = EXCLUDED.embedding,
+                        engagement = EXCLUDED.engagement,
+                        clearance = EXCLUDED.clearance,
+                        metadata = EXCLUDED.metadata
+                    """,
+                    _row(vec, chunk),
+                )
+            if audit_event is not None:
+                insert_audit_event(cur, audit_event)
+
+    def _lock_document(self, cur, engagement: str, source_path: str) -> None:
+        # Transaction-scoped: serializes replace/delete of the same document,
+        # including across API processes, and releases at commit/rollback.
+        cur.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%(key)s, 0))",
+            {"key": f"{self.table_name}/{engagement}/{source_path}"},
+        )
+
+    _DOC_MATCH = "WHERE engagement = %(engagement)s AND metadata->>'source_path' = %(source_path)s"
 
     def replace_document(self, engagement: str, source_path: str, vectors, chunks,
-                         max_existing_clearance: int | None = None) -> None:
+                         max_existing_clearance: int | None = None,
+                         *, audit_event: dict | None = None) -> None:
         """Swaps every chunk of one document (same engagement and source_path)
         for `chunks` in ONE transaction: the clearance check, the delete of all
-        old chunks and the insert either all commit or all roll back, so a
-        shorter new version leaves no stale chunks and a failure leaves the old
-        version intact. Raises DocumentReplaceForbidden (and changes nothing)
-        if any existing chunk's clearance is above `max_existing_clearance`;
-        None means no limit, for admins.
+        old chunks, the insert and the audit event either all commit or all
+        roll back, so a shorter new version leaves no stale chunks and a
+        failure (including a failed audit write) leaves the old version
+        intact. Raises DocumentReplaceForbidden (and changes nothing) if any
+        existing chunk's clearance is above `max_existing_clearance`; None
+        means no limit, for admins.
 
-        A transaction-scoped advisory lock on the document key serializes
-        concurrent replacements of the same document, including across API
-        processes. Plain INSERT (no ON CONFLICT): if a new chunk_id ever
-        clashed with another document's row, the whole replacement fails
-        rather than silently overwriting that row."""
+        Plain INSERT (no ON CONFLICT): if a new chunk_id ever clashed with
+        another document's row, the whole replacement fails rather than
+        silently overwriting that row."""
+        from .audit import insert_audit_event
         from .vectorstore import DocumentReplaceForbidden
 
-        if vectors.shape[0] != len(chunks):
-            raise ValueError("vectors and chunks length mismatch")
-        if vectors.shape[1] != self.dim:
-            raise ValueError(f"expected dim {self.dim}, got {vectors.shape[1]}")
+        self._check_vectors(vectors, chunks)
         doc = {"engagement": engagement, "source_path": source_path}
-        match = "WHERE engagement = %(engagement)s AND metadata->>'source_path' = %(source_path)s"
-        with self._lock:
-            try:
-                with self._conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT pg_advisory_xact_lock(hashtextextended(%(key)s, 0))",
-                        {"key": f"{self.table_name}/{engagement}/{source_path}"},
-                    )
-                    cur.execute(f"SELECT MAX(clearance) FROM {self.table_name} {match}", doc)
-                    existing_max = cur.fetchone()[0]
-                    if (max_existing_clearance is not None and existing_max is not None
-                            and existing_max > max_existing_clearance):
-                        raise DocumentReplaceForbidden()
-                    cur.execute(f"DELETE FROM {self.table_name} {match}", doc)
-                    for vec, chunk in zip(vectors, chunks):
-                        cur.execute(
-                            f"""
-                            INSERT INTO {self.table_name}
-                                (chunk_id, text, embedding, engagement, clearance, metadata)
-                            VALUES (%(chunk_id)s, %(text)s, %(embedding)s, %(engagement)s,
-                                    %(clearance)s, %(metadata)s)
-                            """,
-                            _row(vec, chunk),
-                        )
-                self._conn.commit()
-            except BaseException:
-                self._conn.rollback()
-                raise
+        with self._pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            self._lock_document(cur, engagement, source_path)
+            cur.execute(f"SELECT MAX(clearance) FROM {self.table_name} {self._DOC_MATCH}", doc)
+            existing_max = cur.fetchone()[0]
+            if (max_existing_clearance is not None and existing_max is not None
+                    and existing_max > max_existing_clearance):
+                raise DocumentReplaceForbidden()
+            cur.execute(f"DELETE FROM {self.table_name} {self._DOC_MATCH}", doc)
+            for vec, chunk in zip(vectors, chunks):
+                cur.execute(
+                    f"""
+                    INSERT INTO {self.table_name}
+                        (chunk_id, text, embedding, engagement, clearance, metadata)
+                    VALUES (%(chunk_id)s, %(text)s, %(embedding)s, %(engagement)s,
+                            %(clearance)s, %(metadata)s)
+                    """,
+                    _row(vec, chunk),
+                )
+            if audit_event is not None:
+                insert_audit_event(cur, audit_event)
+
+    def delete_document(self, engagement: str, source_path: str,
+                        max_existing_clearance: int | None = None,
+                        *, audit_event_factory=None) -> int:
+        """Deletes every chunk of one document in ONE transaction and returns
+        how many were deleted (0 if there was no such document). Raises
+        DocumentReplaceForbidden, changing nothing, if any chunk's clearance
+        is above `max_existing_clearance` (None = no limit, for admins): the
+        same rule as replace_document. `audit_event_factory(n_chunks)` builds
+        the audit event, written in the same transaction; nothing is
+        written when nothing was deleted."""
+        from .audit import insert_audit_event
+        from .vectorstore import DocumentReplaceForbidden
+
+        doc = {"engagement": engagement, "source_path": source_path}
+        with self._pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            self._lock_document(cur, engagement, source_path)
+            cur.execute(f"SELECT MAX(clearance) FROM {self.table_name} {self._DOC_MATCH}", doc)
+            existing_max = cur.fetchone()[0]
+            if existing_max is None:
+                return 0
+            if max_existing_clearance is not None and existing_max > max_existing_clearance:
+                raise DocumentReplaceForbidden()
+            cur.execute(f"DELETE FROM {self.table_name} {self._DOC_MATCH}", doc)
+            n = cur.rowcount
+            if audit_event_factory is not None:
+                insert_audit_event(cur, audit_event_factory(n))
+            return n
+
+    def list_documents(self, engagement: str, max_clearance: int) -> list[dict]:
+        """Documents in one engagement, grouped by name. A document with ANY
+        chunk above `max_clearance` is left out entirely (HAVING), so it
+        can't show up or affect the counts. `uploaded_at` is the newest
+        `ingested_at` in the document's chunks (None for older documents)."""
+        sql = f"""
+            SELECT metadata->>'source_path' AS name,
+                   COUNT(*) AS chunks,
+                   MAX(clearance) AS clearance,
+                   MAX(metadata->>'ingested_at') AS uploaded_at
+            FROM {self.table_name}
+            WHERE engagement = %(engagement)s
+            GROUP BY metadata->>'source_path'
+            HAVING MAX(clearance) <= %(max_clearance)s
+            ORDER BY name
+        """
+        with self._pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(sql, {"engagement": engagement, "max_clearance": max_clearance})
+            return [
+                {"name": r[0], "chunks": r[1], "clearance": r[2], "uploaded_at": r[3]}
+                for r in cur.fetchall()
+            ]
 
     def search(
         self, query_vec, top_k: int = 5, user: User | None = None, engagement: str | None = None
@@ -222,7 +306,7 @@ class PgVectorStore:
             ORDER BY embedding <=> %(qvec)s
             LIMIT %(top_k)s
         """
-        with self._lock, self._conn.cursor() as cur:
+        with self._pool.connection() as conn, conn.cursor() as cur:
             cur.execute(sql, params)
             rows = cur.fetchall()
         return [
@@ -231,7 +315,7 @@ class PgVectorStore:
         ]
 
     def save(self, directory: str | Path | None = None) -> None:
-        # Every add() already commits to Postgres — nothing to flush to disk.
+        # Every write already commits to Postgres; nothing to flush to disk.
         # Kept for interface parity with NumpyVectorStore.save().
         pass
 

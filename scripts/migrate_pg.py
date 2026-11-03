@@ -11,6 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from consultrag.audit import ensure_audit_schema
 from consultrag.config import settings
 from consultrag.pgvectorstore import ensure_schema
 
@@ -33,6 +34,8 @@ def main():
     try:
         ensure_schema(conn, args.dim, args.table)
         print(f"Schema ready: table '{args.table}' (dim={args.dim})")
+        ensure_audit_schema(conn)
+        print("Audit schema ready: table 'audit_events'")
     finally:
         conn.close()
 

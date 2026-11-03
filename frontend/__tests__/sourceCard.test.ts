@@ -13,7 +13,13 @@ it("escapes a hostile filename in a citation", () => {
   const hostile = '<img src=x onerror="alert(1)">report.txt';
   const html = renderToStaticMarkup(
     createElement(SourceCard, {
-      citation: { source_path: hostile, locator: "<b>page 1</b>", score: 0.5 },
+      citation: {
+        number: 1,
+        source_path: hostile,
+        locator: "<b>page 1</b>",
+        score: 0.5,
+        text: "<script>alert(1)</script> passage",
+      },
     })
   );
   expect(html).not.toContain("<img");

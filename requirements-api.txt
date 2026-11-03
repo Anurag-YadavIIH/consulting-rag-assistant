@@ -7,4 +7,5 @@ python-multipart>=0.0.9   # multipart form parsing for POST /ingest/upload
 uvicorn[standard]>=0.29
 pyjwt[crypto]>=2.8
 psycopg[binary]>=3.1
+psycopg-pool>=3.2,<4      # connection pool for PgVectorStore (needs the `check` option)
 pgvector>=0.2

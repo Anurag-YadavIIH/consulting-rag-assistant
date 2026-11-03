@@ -17,9 +17,15 @@ export { API_BASE_URL };
 // --- types, mirroring src/consultrag/api/schemas.py ---------------------
 
 export interface Citation {
+  /** Matches the passage's [n] in the answer's context (1-based). Clickable
+   * [n] in the answer text is only guaranteed in extractive mode, so the
+   * source list must work even when the answer contains no numbers. */
+  number: number;
   source_path: string;
   locator: string;
   score: number;
+  /** Redacted passage text, from a chunk the caller may see. */
+  text: string;
   // Future seam: a `date`/`is_stale` field belongs here once the live-data
   // layer (see ARCHITECTURE.md §8) exists and /query actually returns one.
   // Not built on the API side yet, so deliberately not added here.
@@ -36,6 +42,48 @@ export interface IngestResponse {
 
 export interface UploadResponse extends IngestResponse {
   source_name: string;
+}
+
+/** GET /documents?engagement=... Documents the caller couldn't retrieve
+ * (any chunk above their clearance) are left out entirely. */
+export interface DocumentInfo {
+  name: string;
+  chunks: number;
+  clearance: number;
+  /** UTC ISO 8601, or null for documents ingested before upload times were kept. */
+  uploaded_at: string | null;
+}
+
+export interface DocumentsResponse {
+  engagement: string;
+  documents: DocumentInfo[];
+}
+
+/** DELETE /documents?engagement=...&name=... A missing document and one the
+ * caller can't see both return the same 404. */
+export interface DeleteDocumentResponse {
+  name: string;
+  chunks_deleted: number;
+}
+
+/** GET /admin/activity (admins only). No question text is stored. */
+export interface ActivityEvent {
+  id: number;
+  ts: string;
+  event: "ingest" | "delete" | "query";
+  user_id: string;
+  engagement: string | null;
+  document: string | null;
+  n_chunks: number | null;
+  redaction_counts: Record<string, number> | null;
+  n_retrieved: number | null;
+  n_blocked: number | null;
+}
+
+export interface ActivityResponse {
+  events: ActivityEvent[];
+  /** Pass as `before` for the next (older) page; null when there's no more. */
+  next_before: number | null;
 }
 
 /** File types POST /ingest/upload accepts (the server is authoritative). */

@@ -372,6 +372,48 @@ the Streamlit demo only works with `APP_ENV=development`. The Next.js
 frontend uses upload. For bulk server-side ingestion, use
 `scripts/ingest.py`.
 
+### Documents, citations and activity
+
+Tested with the unit tests and with Docker Compose and Postgres on my
+machine. **Not tested on AWS.**
+
+- **Citations:** each `/query` and `/draft` citation has a `number` and the
+  passage `text`. The number matches the `[n]` the passage had in the prompt,
+  so an answer that cites `[2]` means citation 2. The text is the stored
+  chunk, which was redacted at ingestion, and only ever from a chunk that
+  passed the caller's access filter. Numbers in the answer text are only
+  guaranteed in extractive mode: the Ollama prompt asks the model to cite
+  `[n]`, but it may not, so a client must show the source list even when
+  the answer contains no numbers.
+- **`GET /documents?engagement=acme`** lists one engagement's documents:
+  name, chunk count, clearance and `uploaded_at` (UTC; `null` for documents
+  ingested before upload times were kept). Access is the same as `/query`.
+  A document with any chunk above the caller's clearance is left out
+  entirely, so it doesn't affect what's shown.
+- **`DELETE /documents?engagement=acme&name=deck.pptx`** deletes one
+  document. Who may delete follows the rule for replacing a document by
+  uploading the same name: a member may delete a document when none of its
+  chunks is above their clearance, and admins always can. A document the
+  caller can't see gets exactly the same `404` as one that doesn't exist.
+  The deletion and its audit event share one database transaction. The
+  deleted document disappears from vector search at once and from the
+  keyword index of the API process that handled the delete; other API
+  processes keep their old keyword index until they restart, as after an
+  upload.
+- **`GET /admin/activity?limit=50&before=<id>`** pages through recent
+  ingest, delete and query events, newest first, for global admins only
+  (`403` otherwise). Events come from the `audit_events` table in Postgres
+  (created by `scripts/migrate_pg.py`), which stores user IDs, engagements,
+  document names (run through the redactor), chunk counts, redaction counts
+  and retrieved and blocked counts. It stores no question text, chunk text,
+  document content or email addresses. Ingest and delete events are written
+  in the same transaction as the change, so a failed audit write rolls the
+  change back; a failed write for a query event is logged and the query
+  still succeeds. The CLI keeps its own JSON-lines file log.
+- **Database connections:** `PgVectorStore` uses a small connection pool
+  (`psycopg-pool`, 1 to 4 connections). A dropped connection is detected and
+  replaced, which was tested by killing the pool's connections in Postgres.
+
 ### Fail-closed startup checks
 
 The app refuses to start (not a warning — a hard error) in two cases:

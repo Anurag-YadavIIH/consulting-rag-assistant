@@ -16,6 +16,8 @@ locals {
     "/draft",
     "/ingest",
     "/ingest/*",
+    "/documents",
+    "/admin/*",
     "/health",
   ]
 

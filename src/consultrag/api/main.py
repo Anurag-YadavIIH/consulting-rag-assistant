@@ -17,7 +17,9 @@ from ..auth.app_token import ensure_app_jwt_secret_configured
 from ..auth.dev_bypass import ensure_dev_auth_bypass_is_safe, warn_bypass_active
 from ..config import settings
 from .deps import get_oidc_verifier
+from .routes import admin as admin_routes
 from .routes import auth as auth_routes
+from .routes import documents as documents_routes
 from .routes import draft as draft_routes
 from .routes import ingest as ingest_routes
 from .routes import me as me_routes
@@ -105,6 +107,8 @@ app.include_router(ingest_routes.router)
 app.include_router(query_routes.router)
 app.include_router(draft_routes.router)
 app.include_router(me_routes.router)
+app.include_router(documents_routes.router)
+app.include_router(admin_routes.router)
 
 
 @app.get("/health", tags=["health"])

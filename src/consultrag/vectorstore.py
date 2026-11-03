@@ -52,7 +52,12 @@ class NumpyVectorStore:
         query."""
         return list(self._chunks)
 
-    def add(self, vectors: np.ndarray, chunks: list[StoredChunk]) -> None:
+    def add(self, vectors: np.ndarray, chunks: list[StoredChunk], *,
+            audit_event: dict | None = None) -> None:
+        if audit_event is not None:
+            # No database transaction to join here; PgAuditLog only pairs with
+            # PgVectorStore. Refuse rather than silently drop the event.
+            raise NotImplementedError("NumpyVectorStore can't write transactional audit events")
         if vectors.shape[0] != len(chunks):
             raise ValueError("vectors and chunks length mismatch")
         if vectors.shape[1] != self.dim:
@@ -62,12 +67,17 @@ class NumpyVectorStore:
 
     def replace_document(self, engagement: str, source_path: str, vectors: np.ndarray,
                          chunks: list[StoredChunk],
-                         max_existing_clearance: int | None = None) -> None:
+                         max_existing_clearance: int | None = None,
+                         *, audit_event: dict | None = None) -> None:
         """Atomically swaps every chunk of one document (same engagement and
         source_path) for `chunks`. If any existing chunk's clearance is above
         `max_existing_clearance` (None = no limit, for admins), raises
         DocumentReplaceForbidden and changes nothing. The new state is built
         aside and assigned at the end, so a failure leaves the old version."""
+        if audit_event is not None:
+            # No database transaction to join here; PgAuditLog only pairs with
+            # PgVectorStore. Refuse rather than silently drop the event.
+            raise NotImplementedError("NumpyVectorStore can't write transactional audit events")
         if vectors.shape[0] != len(chunks):
             raise ValueError("vectors and chunks length mismatch")
         if vectors.shape[1] != self.dim:
@@ -82,6 +92,44 @@ class NumpyVectorStore:
         new_vectors = np.vstack([self._vectors[keep], vectors.astype(np.float32)])
         new_chunks = [self._chunks[i] for i in keep] + list(chunks)
         self._vectors, self._chunks = new_vectors, new_chunks
+
+    def delete_document(self, engagement: str, source_path: str,
+                        max_existing_clearance: int | None = None,
+                        *, audit_event_factory=None) -> int:
+        """Same contract as PgVectorStore.delete_document: returns the number
+        of chunks deleted (0 if none), raises DocumentReplaceForbidden and
+        changes nothing if any chunk is above `max_existing_clearance`."""
+        if audit_event_factory is not None:
+            raise NotImplementedError("NumpyVectorStore can't write transactional audit events")
+        existing = [c for c in self._chunks if _is_document(c.metadata, engagement, source_path)]
+        if not existing:
+            return 0
+        if max_existing_clearance is not None and any(
+            int(c.metadata.get("clearance", 1)) > max_existing_clearance for c in existing
+        ):
+            raise DocumentReplaceForbidden()
+        keep = [i for i, c in enumerate(self._chunks)
+                if not _is_document(c.metadata, engagement, source_path)]
+        self._vectors = self._vectors[keep] if keep else np.zeros((0, self.dim), dtype=np.float32)
+        self._chunks = [self._chunks[i] for i in keep]
+        return len(existing)
+
+    def list_documents(self, engagement: str, max_clearance: int) -> list[dict]:
+        """Same contract as PgVectorStore.list_documents: a document with any
+        chunk above `max_clearance` is left out entirely."""
+        docs: dict[str, dict] = {}
+        for c in self._chunks:
+            if c.metadata.get("engagement") != engagement:
+                continue
+            name = c.metadata.get("source_path")
+            d = docs.setdefault(name, {"name": name, "chunks": 0, "clearance": 0, "uploaded_at": None})
+            d["chunks"] += 1
+            d["clearance"] = max(d["clearance"], int(c.metadata.get("clearance", 1)))
+            ts = c.metadata.get("ingested_at")
+            if ts and (d["uploaded_at"] is None or ts > d["uploaded_at"]):
+                d["uploaded_at"] = ts
+        return sorted((d for d in docs.values() if d["clearance"] <= max_clearance),
+                      key=lambda d: d["name"])
 
     def search(
         self, query_vec: np.ndarray, top_k: int = 5, user=None, engagement: str | None = None

@@ -115,7 +115,7 @@ fine-tuning — see §13. These are deliberate roadmap items, not omissions.
 | **Live Search Provider** | Tavily by default; returns dated, recency-filtered passages. Interface allows Exa/Brave swap. |
 | **Result Merger + Synthesizer** | Unifies internal + external context tagged by source type and date; produces a grounded answer with per-claim citations and staleness flags. |
 | **Access Control** | Engagement isolation + clearance, enforced at the DB query layer with an in-process policy backstop. |
-| **Audit Log** | Append-only record of every ingest and query (who, what, when; redaction counts; what was stripped from outbound queries). |
+| **Audit Log** | Append-only record of every ingest and query (who, what, when; redaction counts; what was stripped from outbound queries). The API writes it to the `audit_events` table in Postgres with no question text, chunk text or emails; the CLI writes a local file. |
 | **Evaluation** | Retrieval metrics (hit@k, recall@k, MRR) + RAGAS-style faithfulness and answer relevancy against a golden set. |
 | **Observability** | Langfuse traces: query, retrieved ids + scores, latency, token/cost. |
 | **API** | FastAPI service; OAuth2 bearer auth; endpoints for ingest, query, draft, and structured-entity lookup. |

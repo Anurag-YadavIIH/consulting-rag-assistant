@@ -93,7 +93,7 @@ function Invoke-OneOffTask([string[]]$command) {
 Invoke-OneOffTask @("sh", "-c", "python scripts/migrate_pg.py --dim 384 && python scripts/migrate_authz.py")
 ```
 
-Expect `exitCode: 0`. The output is in CloudWatch Logs, group `/ecs/consultrag-api`: `Schema ready ...` and `Authz schema ready`. Keep this PowerShell window open; step 9 reuses `Invoke-OneOffTask`.
+Expect `exitCode: 0`. The output is in CloudWatch Logs, group `/ecs/consultrag-api`: `Schema ready ...`, `Audit schema ready: table 'audit_events'` and `Authz schema ready`. Keep this PowerShell window open; step 9 reuses `Invoke-OneOffTask`.
 
 ## 5. Start the API
 

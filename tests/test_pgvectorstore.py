@@ -44,10 +44,9 @@ def store():
 
     s = PgVectorStore(dim=4, table_name=TEST_TABLE)
     yield s
-    with s._conn.cursor() as cur:
+    with s.pool.connection() as conn, conn.cursor() as cur:
         cur.execute(f"DROP TABLE IF EXISTS {TEST_TABLE}")
-    s._conn.commit()
-    s._conn.close()
+    s.close()
 
 
 def _chunk(cid, text, engagement, clearance):

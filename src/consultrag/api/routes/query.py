@@ -56,7 +56,10 @@ def query(
     return QueryResponse(
         answer=answer.text,
         citations=[
-            CitationResponse(source_path=c.source_path, locator=c.locator, score=c.score)
+            CitationResponse(
+                number=c.number, source_path=c.source_path, locator=c.locator,
+                score=c.score, text=c.text,
+            )
             for c in answer.citations
         ],
     )

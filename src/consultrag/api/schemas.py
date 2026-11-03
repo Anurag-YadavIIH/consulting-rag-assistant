@@ -54,14 +54,57 @@ class QueryRequest(BaseModel):
 
 
 class CitationResponse(BaseModel):
+    # Matches the [n] of the passage in the answer's context. Clickable [n]
+    # in the answer text is only guaranteed in extractive mode; clients must
+    # show the source list even when the answer has no numbers.
+    number: int
     source_path: str
     locator: str
     score: float
+    # Redacted passage text from a chunk the caller is allowed to see.
+    text: str
 
 
 class QueryResponse(BaseModel):
     answer: str
     citations: list[CitationResponse]
+
+
+class DocumentInfo(BaseModel):
+    name: str
+    chunks: int
+    clearance: int
+    # UTC ISO 8601; null for documents ingested before upload times were kept.
+    uploaded_at: str | None = None
+
+
+class DocumentsResponse(BaseModel):
+    engagement: str
+    documents: list[DocumentInfo]
+
+
+class DeleteDocumentResponse(BaseModel):
+    name: str
+    chunks_deleted: int
+
+
+class ActivityEvent(BaseModel):
+    id: int
+    ts: str
+    event: str
+    user_id: str
+    engagement: str | None = None
+    document: str | None = None
+    n_chunks: int | None = None
+    redaction_counts: dict | None = None
+    n_retrieved: int | None = None
+    n_blocked: int | None = None
+
+
+class ActivityResponse(BaseModel):
+    events: list[ActivityEvent]
+    # Pass as `before` to get the next (older) page; null when there's no more.
+    next_before: int | None = None
 
 
 class DraftRequest(BaseModel):
