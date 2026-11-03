@@ -31,7 +31,9 @@ def _tokenize(text: str) -> list[str]:
 
 
 class Retriever(Protocol):
-    def retrieve(self, query_vec, query_text: str, fused_k: int, user=None) -> list[dict]:
+    def retrieve(
+        self, query_vec, query_text: str, fused_k: int, user=None, engagement: str | None = None
+    ) -> list[dict]:
         ...
 
 
@@ -51,12 +53,18 @@ class BM25Index:
     def from_store(cls, store: NumpyVectorStore) -> "BM25Index":
         return cls(store.all_chunks())
 
-    def search(self, query_text: str, top_k: int) -> list[dict]:
+    def search(self, query_text: str, top_k: int, engagement: str | None = None) -> list[dict]:
         if not self._chunks:
             return []
         scores = self._bm25.get_scores(_tokenize(query_text))
-        k = min(top_k, len(self._chunks))
-        ranked = sorted(range(len(scores)), key=lambda i: -scores[i])[:k]
+        candidates = range(len(scores))
+        if engagement is not None:
+            # Restrict before the top_k cut, so other engagements' chunks can't
+            # crowd the scoped engagement out of the keyword leg.
+            candidates = [
+                i for i in candidates if self._chunks[i].metadata.get("engagement") == engagement
+            ]
+        ranked = sorted(candidates, key=lambda i: -scores[i])[:top_k]
         results = []
         for i in ranked:
             c = self._chunks[i]
@@ -115,12 +123,19 @@ class HybridRetriever:
     def refresh(self) -> None:
         self._bm25 = BM25Index.from_store(self.store)
 
-    def retrieve(self, query_vec, query_text: str, fused_k: int, user=None) -> list[dict]:
+    def retrieve(
+        self, query_vec, query_text: str, fused_k: int, user=None, engagement: str | None = None
+    ) -> list[dict]:
         # `user`, if given, lets the store apply a defense-in-depth SQL filter
         # on the dense leg (PgVectorStore does; NumpyVectorStore ignores it).
-        # The BM25 leg always searches the full local snapshot — both legs
-        # still pass through AccessPolicy.filter() afterward regardless.
-        dense = self.store.search(query_vec, top_k=max(self.dense_k, fused_k), user=user)
-        sparse = self._bm25.search(query_text, top_k=max(self.bm25_k, fused_k))
+        # The BM25 leg searches the local snapshot. Both legs still pass
+        # through AccessPolicy.filter() afterward regardless. `engagement`, if
+        # given, scopes BOTH legs to that one engagement.
+        dense = self.store.search(
+            query_vec, top_k=max(self.dense_k, fused_k), user=user, engagement=engagement
+        )
+        sparse = self._bm25.search(
+            query_text, top_k=max(self.bm25_k, fused_k), engagement=engagement
+        )
         fused = _rrf_fuse([dense, sparse], k=self.rrf_k)
         return fused[:fused_k]

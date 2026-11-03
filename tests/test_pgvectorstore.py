@@ -110,6 +110,38 @@ def test_admin_bypasses_engagement_filter(store):
     assert [r["chunk_id"] for r in results] == ["globex-doc"]
 
 
+
+def test_selected_engagement_is_filtered_in_sql_before_limit(store):
+    # Five globex rows closer to the query than the one acme row. An admin
+    # (no membership filter) selecting acme must still get acme with
+    # top_k=1, which only works if the scope is in the WHERE clause, ahead
+    # of LIMIT, rather than applied to the results afterwards.
+    vectors = np.array([[1, 0, 0, 0]] * 5 + [[0.1, 1, 0, 0]], dtype=np.float32)
+    store.add(vectors, [_chunk(f"globex-{i}", "g", "globex", 1) for i in range(5)]
+              + [_chunk("acme-doc", "a", "acme", 1)])
+    admin = User.make("u", roles=["admin"], clearance=5)
+    qvec = np.array([1, 0, 0, 0], dtype=np.float32)
+    assert [r["chunk_id"] for r in store.search(qvec, top_k=1, user=admin, engagement="acme")] == ["acme-doc"]
+    # Unscoped admin search is unchanged.
+    assert store.search(qvec, top_k=1, user=admin)[0]["chunk_id"].startswith("globex-")
+
+
+def test_selected_engagement_never_widens_membership_or_clearance(store):
+    vectors = np.array([[1, 0, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0]], dtype=np.float32)
+    store.add(vectors, [
+        _chunk("globex-doc", "g", "globex", 1),
+        _chunk("acme-secret", "s", "acme", 3),
+        _chunk("no-engagement", "n", None, 1),
+    ])
+    member = User.make("u", roles=["analyst", "engagement:acme"], clearance=1)
+    qvec = np.array([1, 0, 0, 0], dtype=np.float32)
+    # Selecting an engagement the user isn't in returns nothing (the API
+    # also 403s first); clearance still applies within the selected one; and
+    # chunks with no engagement are outside any selected engagement.
+    assert store.search(qvec, top_k=5, user=member, engagement="globex") == []
+    assert store.search(qvec, top_k=5, user=member, engagement="acme") == []
+
+
 # --- replace_document: atomic per-document replacement (uploads) -------------
 
 

@@ -2,11 +2,12 @@
 POST /query — wraps the existing RAGEngine. If `engagement` is given, it's
 validated as membership the caller actually holds (403, with NO body other
 than the error detail, if not) before the RAG engine is ever called — no
-chunk content, counts, or metadata leak for a forbidden engagement. Whether
-or not `engagement` is given, retrieval itself is always scoped to the
-caller's actual memberships by RAGEngine's existing AccessPolicy filter
-(plus a SQL-level filter too, when the store supports it) — this endpoint
-adds a validation gate, it doesn't replace that scoping.
+chunk content, counts, or metadata leak for a forbidden engagement. It
+then limits retrieval and citations to that one engagement (in the SQL
+query, the keyword search and before reranking). Whether or not `engagement`
+is given, retrieval itself is always scoped to the caller's actual
+memberships by RAGEngine's existing AccessPolicy filter (plus a SQL-level
+filter too, when the store supports it); `engagement` only narrows that.
 """
 
 from __future__ import annotations
@@ -36,7 +37,7 @@ def query(
 ) -> QueryResponse:
     _require_engagement_membership(user, body.engagement)
 
-    answer = engine.answer(body.question, user)
+    answer = engine.answer(body.question, user, engagement=body.engagement)
     return QueryResponse(
         answer=answer.text,
         citations=[

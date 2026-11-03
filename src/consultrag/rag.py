@@ -138,15 +138,28 @@ class RAGEngine:
         self.fused_k = fused_k
         self.tracer = tracer or build_tracer()
 
-    def retrieve(self, query: str, user: User, *, fused_k: int | None = None) -> list[dict]:
+    def retrieve(
+        self, query: str, user: User, *, fused_k: int | None = None, engagement: str | None = None
+    ) -> list[dict]:
         # Fuse dense + BM25 candidates (dense leg gets a defense-in-depth SQL
         # filter when the store supports it — see PgVectorStore), drop
         # anything the user can't see, THEN rerank what's left — a blocked
         # chunk never reaches the reranker.
+        #
+        # `engagement` scopes retrieval to one engagement. It only narrows:
+        # the caller's membership is validated by the API route, and
+        # AccessPolicy still applies to whatever comes back. It is passed to
+        # the retriever (so both legs search only that engagement) and then
+        # enforced again here, so nothing outside it reaches the reranker or
+        # the citations even if a retriever ignores the argument.
         qvec = self.embedder.embed([query])[0]
-        raw = self.retriever.retrieve(qvec, query, fused_k=fused_k or self.fused_k, user=user)
+        raw = self.retriever.retrieve(
+            qvec, query, fused_k=fused_k or self.fused_k, user=user, engagement=engagement
+        )
         allowed = self.access.filter(user, raw)
         n_blocked = len(raw) - len(allowed)
+        if engagement is not None:
+            allowed = [c for c in allowed if c["metadata"].get("engagement") == engagement]
         reranked = self.reranker.rerank(query, allowed, top_k=self.top_k)
         if self.audit:
             self.audit.log_query(
@@ -157,9 +170,15 @@ class RAGEngine:
             )
         return reranked
 
-    def answer(self, query: str, user: User, system_prompt: str | None = None) -> Answer:
+    def answer(
+        self,
+        query: str,
+        user: User,
+        system_prompt: str | None = None,
+        engagement: str | None = None,
+    ) -> Answer:
         start = time.perf_counter()
-        chunks = self.retrieve(query, user)
+        chunks = self.retrieve(query, user, engagement=engagement)
         if not chunks:
             latency_ms = (time.perf_counter() - start) * 1000
             self.tracer.trace_query(

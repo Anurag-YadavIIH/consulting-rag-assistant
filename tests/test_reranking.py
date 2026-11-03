@@ -18,7 +18,7 @@ class FakeRetriever:
     def __init__(self, results):
         self._results = results
 
-    def retrieve(self, query_vec, query_text, fused_k, user=None):
+    def retrieve(self, query_vec, query_text, fused_k, user=None, engagement=None):
         return list(self._results)
 
 
@@ -81,3 +81,40 @@ def test_reranker_only_sees_access_filtered_candidates():
     out = engine.retrieve("q", user)
     assert "a" not in [c["chunk_id"] for c in out]
     assert [c["chunk_id"] for c in out] == ["c", "b"]
+
+
+class RecordingReranker:
+    """Test double: records exactly what it was given, keeps the order."""
+
+    def __init__(self):
+        self.seen: list[str] = []
+
+    def rerank(self, query, candidates, top_k):
+        self.seen = [c["chunk_id"] for c in candidates]
+        return candidates[:top_k]
+
+
+def test_selected_engagement_reaches_reranker_and_nothing_else_does():
+    # FakeRetriever ignores `engagement`, so this proves the engine's own
+    # scope filter: even an admin's globex candidate never reaches the
+    # reranker (or the citations) when acme is selected.
+    candidates = _candidates()
+    candidates[0]["metadata"] = {"engagement": "globex"}
+    candidates[1]["metadata"] = {"engagement": "acme"}
+    candidates[2]["metadata"] = {"engagement": "acme"}
+    reranker = RecordingReranker()
+    engine = RAGEngine(
+        embedder=HashEmbedder(dim=8),
+        store=NumpyVectorStore(dim=8),
+        retriever=FakeRetriever(candidates),
+        reranker=reranker,
+        top_k=3,
+    )
+    admin = User.make("u", roles=["admin"], clearance=5)
+    out = engine.retrieve("q", admin, engagement="acme")
+    assert reranker.seen == ["b", "c"]
+    assert [c["chunk_id"] for c in out] == ["b", "c"]
+
+    # Omitted engagement: unchanged, the admin's reranker sees everything.
+    engine.retrieve("q", admin)
+    assert reranker.seen == ["a", "b", "c"]
