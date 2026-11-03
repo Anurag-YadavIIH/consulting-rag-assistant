@@ -32,6 +32,20 @@ from jwt import PyJWKClient
 # token header's alg against exactly this list.
 ALLOWED_ALGORITHMS = ["RS256"]
 
+# Claims a token must carry; PyJWT only checks exp/iat/aud/iss when present
+# unless they're listed here.
+REQUIRED_CLAIMS = ["exp", "iat", "iss", "aud", "sub"]
+
+# Tolerated clock difference between us and the issuer, in seconds. Small on
+# purpose: it covers a drifting container clock, not a stale token.
+CLOCK_LEEWAY_SECONDS = 30
+
+# Google documents both forms as valid `iss` values for its ID tokens. They're
+# accepted only when the configured discovery document is Google's own; every
+# other provider keeps exact matching against its discovery `issuer`.
+GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
+GOOGLE_ISSUERS = ("https://accounts.google.com", "accounts.google.com")
+
 
 class OIDCError(Exception):
     """Token failed authentication for any reason. Callers (the FastAPI
@@ -51,7 +65,9 @@ class OIDCVerifier:
     document. Nothing here is Google-specific — any compliant issuer works
     by pointing discovery_url at its own discovery document."""
 
-    def __init__(self, discovery_url: str, audience: str, *, discovery_ttl_seconds: float = 3600):
+    def __init__(
+        self, discovery_url: str, audience: str | None, *, discovery_ttl_seconds: float = 3600
+    ):
         self.discovery_url = discovery_url
         self.audience = audience
         self.discovery_ttl_seconds = discovery_ttl_seconds
@@ -82,11 +98,19 @@ class OIDCVerifier:
             self._jwk_client = PyJWKClient(self._discovery.jwks_uri, cache_keys=True)
         return self._discovery
 
+    def _accepted_issuers(self, discovery: DiscoveryDocument) -> str | tuple[str, ...]:
+        if self.discovery_url == GOOGLE_DISCOVERY_URL and discovery.issuer in GOOGLE_ISSUERS:
+            return GOOGLE_ISSUERS
+        return discovery.issuer
+
     def verify(self, token: str) -> dict:
         """Returns decoded claims (sub, email, ...) on success. Raises
         OIDCError on ANY failure: bad/forged signature, wrong issuer or
-        audience, expiry, a disallowed algorithm, or a discovery/JWKS fetch
-        problem."""
+        audience, expiry, a missing required claim, a disallowed algorithm,
+        no configured audience, or a discovery/JWKS fetch problem."""
+        if not self.audience:
+            # Explicit rather than relying on PyJWT's handling of audience=None.
+            raise OIDCError("OAUTH_AUDIENCE is not configured; refusing every login")
         discovery = self.ensure_discovery()
         try:
             signing_key = self._jwk_client.get_signing_key_from_jwt(token)
@@ -95,7 +119,9 @@ class OIDCVerifier:
                 signing_key.key,
                 algorithms=ALLOWED_ALGORITHMS,
                 audience=self.audience,
-                issuer=discovery.issuer,
+                issuer=self._accepted_issuers(discovery),
+                leeway=CLOCK_LEEWAY_SECONDS,
+                options={"require": REQUIRED_CLAIMS},
             )
         except jwt.PyJWTError as e:
             raise OIDCError(str(e)) from e

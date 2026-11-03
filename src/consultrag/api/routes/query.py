@@ -22,6 +22,20 @@ from ..schemas import CitationResponse, QueryRequest, QueryResponse
 router = APIRouter(tags=["query"])
 
 
+NO_ACCESS_DETAIL = (
+    "no access yet: your account isn't a member of any engagement. "
+    "Ask an administrator to grant you access."
+)
+
+
+def _require_some_access(user: User) -> None:
+    # A signed-in account with no engagement and no admin role (e.g. a Google
+    # account that has never been granted anything) can't query at all, so it
+    # can't reach chunks that have no engagement either.
+    if not AccessPolicy.is_admin(user) and not AccessPolicy.engagements_for(user):
+        raise HTTPException(status_code=403, detail=NO_ACCESS_DETAIL)
+
+
 def _require_engagement_membership(user: User, engagement: str | None) -> None:
     if engagement is None:
         return
@@ -35,6 +49,7 @@ def query(
     user: User = Depends(get_current_app_user),
     engine: RAGEngine = Depends(get_rag_engine),
 ) -> QueryResponse:
+    _require_some_access(user)
     _require_engagement_membership(user, body.engagement)
 
     answer = engine.answer(body.question, user, engagement=body.engagement)

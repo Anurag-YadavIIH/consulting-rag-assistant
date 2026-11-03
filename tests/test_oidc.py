@@ -67,6 +67,7 @@ def _make_token(private_pem, kid, *, claims=None, alg="RS256", header_extra=None
     base_claims = {
         "sub": "user-123",
         "email": "person@example.com",
+        "email_verified": True,
         "iss": ISSUER,
         "aud": AUDIENCE,
         "iat": now,

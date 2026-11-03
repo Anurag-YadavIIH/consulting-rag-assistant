@@ -59,13 +59,36 @@ I estimate about $0.10 to $0.13 an hour while running. I used AWS credits and ra
 
 ## Current limitations
 
-- No HTTPS, frontend or browser sign-in on AWS. The frontend still only supports a local development login.
+- No HTTPS, frontend or browser sign-in on AWS. Google sign-in now works in the frontend locally (Docker Compose and the static export on `http://localhost:3000`), but none of it has been deployed or tested on AWS. The steps it would need are listed under "Future step: frontend and sign-in on AWS" below.
+- This deployment doesn't set `OAUTH_AUDIENCE`. With the current code the API still starts, logs a warning, and rejects every `POST /auth/login`. The `refresh_version` column that sign-out uses is added automatically the first time the API or `scripts/migrate_authz.py` connects.
 - Document upload (`POST /ingest/upload`) was added after this deployment. It works with Docker Compose locally but hasn't been deployed or tested on AWS. The path-based `/ingest` now returns 404 unless `APP_ENV` is `development` or `dev`.
 - After an upload, only the API process that handled it refreshes its in-memory keyword (BM25) index. Other processes find new documents through vector search only until they restart. This deployment runs one task, but running more than one needs a shared fix first, such as keyword search in Postgres or a refresh signal between tasks.
 - FastAPI receives a whole upload before checking its size, so an oversized file still arrives before the 413 is returned. A request size cap at the load balancer would be needed.
 - Terraform state is stored on my laptop, and deployments are manual, with no CI/CD yet.
 - The database is a single instance with no backups, because this is a learning environment holding no real data.
 - This setup is not reviewed for real client or patient data.
+
+## Future step: frontend and sign-in on AWS
+
+Not done, and not tested. This is what the sign-in design needs from AWS.
+
+The refresh token is a `Secure`, `SameSite=Strict` cookie on `Path=/auth`, so the browser must see the frontend and the API as the same site, over HTTPS. The simplest way is one CloudFront distribution in front of both:
+
+- **Origins:** the S3 bucket holding `frontend/out/` (with origin access control), and the API's load balancer.
+- **Default behavior (`*`):** the S3 origin, normal caching. S3 doesn't resolve folder index files, so a CloudFront Function must rewrite paths ending in `/` to `.../index.html` (the export uses `trailingSlash`, for example `/management/` maps to `management/index.html`).
+- **API behaviors, routed to the load balancer:** `/auth/*`, `/me`, `/query`, `/draft`, `/ingest/*` and `/health`. For each:
+  - Allowed methods: GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE.
+  - Caching disabled (the managed `CachingDisabled` policy).
+  - An origin request policy that forwards all viewer headers except `Host` (the managed `AllViewerExceptHostHeader`), so these reach the API: `Authorization` (the access token, and the Google ID token at login), `Content-Type` (including multipart uploads), `X-ConsultRAG-CSRF`, `Origin`, and the `Cookie` header carrying `consultrag_refresh`. Check against the current AWS documentation when building this, because CloudFront treats `Authorization` specially.
+  - Response headers, including `Set-Cookie` from `/auth/login` and `/auth/logout`, must pass through unchanged.
+- **Viewer protocol:** redirect HTTP to HTTPS. The cookie is `Secure`, so sign-in doesn't work over plain HTTP outside `localhost`.
+- **CloudFront to the load balancer:** the load balancer is HTTP-only today, which would leave that leg unencrypted. Add an HTTPS listener (an ACM certificate), and allow traffic only from CloudFront (its managed prefix list plus a secret custom header the load balancer checks).
+
+Settings that go with it:
+
+- Build the frontend with `NEXT_PUBLIC_API_BASE_URL` set to the CloudFront URL (`https://<distribution>`), and `NEXT_PUBLIC_GOOGLE_CLIENT_ID` set to the OAuth client ID.
+- On the API task: `OAUTH_AUDIENCE` set to the same client ID, `CORS_ALLOWED_ORIGINS` set to the CloudFront URL (requests are same-origin then, but this keeps the allowlist explicit), `APP_ENV=production`, and `DEV_AUTH_BYPASS` unset or false.
+- In Google Cloud Console, add `https://<distribution>` (or the custom domain) as an authorized JavaScript origin.
 
 ## Rebuild it
 

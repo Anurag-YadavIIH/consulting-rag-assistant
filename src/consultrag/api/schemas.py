@@ -17,16 +17,14 @@ class MeResponse(BaseModel):
     engagements: list[str]
     is_admin: bool
     clearance: int
+    email: str = ""
 
 
 class LoginResponse(BaseModel):
+    # The refresh token is deliberately NOT in the body: it's set as an
+    # HttpOnly cookie (routes/auth.py) so page scripts can never read it.
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
-
-
-class RefreshRequest(BaseModel):
-    refresh_token: str
 
 
 class RefreshResponse(BaseModel):

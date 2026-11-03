@@ -24,4 +24,5 @@ def me(user: User = Depends(get_current_app_user)) -> MeResponse:
         engagements=AccessPolicy.engagements_for(user),
         is_admin=AccessPolicy.is_admin(user),
         clearance=user.clearance,
+        email=user.email,
     )

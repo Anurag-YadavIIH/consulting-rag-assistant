@@ -11,7 +11,7 @@ from ...rag import RAGEngine
 from ...security.access import User
 from ..deps import get_current_app_user, get_rag_engine
 from ..schemas import CitationResponse, DraftRequest, DraftResponse
-from .query import _require_engagement_membership
+from .query import _require_engagement_membership, _require_some_access
 
 router = APIRouter(tags=["draft"])
 
@@ -29,6 +29,7 @@ def draft(
     user: User = Depends(get_current_app_user),
     engine: RAGEngine = Depends(get_rag_engine),
 ) -> DraftResponse:
+    _require_some_access(user)
     _require_engagement_membership(user, body.engagement)
 
     answer = engine.answer(

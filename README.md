@@ -241,6 +241,9 @@ python scripts/migrate_pg.py --dim 384
 python scripts/migrate_authz.py
 python scripts/seed_authz.py --google-sub <your-sub> --email you@example.com \
     --engagement acme --role analyst --clearance 2
+# or, for an account that has already signed in through the frontend, by the
+# "User #" number shown in its sidebar (no email or Google subject needed):
+python scripts/seed_authz.py --user-id <number> --engagement acme --role analyst
 
 uvicorn consultrag.api.main:app --reload
 # or: docker compose up -d api
@@ -276,6 +279,11 @@ Invoke-RestMethod -Uri "http://localhost:8000/query" -Method Post `
     -ContentType "application/json" `
     -Body (@{ question = "What is the barrier to adoption?"; engagement = "acme" } | ConvertTo-Json)
 ```
+
+`/auth/login` returns only the access token (15 minutes) in its body. The
+refresh token is set as an HttpOnly cookie for browsers (see "Sign-in" under
+the frontend section), so a script that needs more than 15 minutes should
+simply log in again with a fresh Google ID token.
 
 (`Invoke-RestMethod` is PowerShell's native HTTP client; `curl` on Windows is
 usually aliased to it. If you have real `curl.exe` installed, the equivalent
@@ -366,6 +374,13 @@ The app refuses to start (not a warning — a hard error) in two cases:
   would — there's no "anything that isn't literally production is fine"
   fallback. When bypass *is* correctly enabled, every request is treated as a
   fixed dev user and a visible warning is logged once at startup.
+
+It also refuses to start if `CORS_ALLOWED_ORIGINS` contains `*`. The API
+allows credentialed requests (the refresh cookie), and with credentials on,
+a wildcard would let any website make signed-in calls.
+
+If `OAUTH_AUDIENCE` is unset (and bypass is off), the app still starts but
+logs a warning, and every `POST /auth/login` is rejected until it's set.
 
 `DEV_AUTH_BYPASS` is for local development only — every protected route skips
 authentication entirely when it's on.
@@ -484,10 +499,87 @@ Open `http://localhost:3000`. `CORS_ALLOWED_ORIGINS` on the API side defaults
 to empty (no browser origin allowed) — it must be set explicitly, as above,
 for the browser-based frontend to reach the API at all; see `config.py`.
 
-**The production path is real Google sign-in, not bypass** — exactly as for
-the Streamlit UI. `frontend/lib/auth.ts`'s `getAuthHeaders()` is the single
-seam every API call goes through; it returns `{}` under dev-bypass today,
-and is the only file that changes when real Google OIDC sign-in replaces it.
+### Sign-in (Google)
+
+With DEV_AUTH_BYPASS off, the frontend shows a "Sign in with Google" screen
+and renders no app data until there's a session. All of the auth logic is in
+`frontend/lib/auth.ts`:
+
+- Google Identity Services gives the browser a Google ID token, which is sent
+  once to `POST /auth/login`. The API checks the signature (RS256, Google's
+  published keys), issuer, audience (`OAUTH_AUDIENCE`), expiry (30 seconds of
+  clock leeway) and that the email is verified, then returns an app access
+  token.
+- **Access token:** 15 minutes, kept in memory only (never in localStorage or
+  sessionStorage), so a reload drops it.
+- **Refresh token:** 7 days from sign-in, set by the API as an `HttpOnly`,
+  `Secure`, `SameSite=Strict` cookie on `Path=/auth`. Page scripts can't
+  read it. `POST /auth/refresh` and `POST /auth/logout` also require the
+  `X-ConsultRAG-CSRF` header.
+- On a 401 the frontend refreshes once and retries the request once. A
+  reload recovers the session the same way. If the refresh fails, it goes
+  back to the sign-in screen.
+- Every refresh re-reads roles and clearance from Postgres, so a granted or
+  removed role takes effect at the next refresh (at most 15 minutes).
+- **Sign out** revokes on the server, not just in this browser: the API
+  increments the account's refresh version, which rejects every refresh
+  token the account holds, in any browser. An access token that was already
+  issued stays valid until it expires (up to 15 minutes), because protected
+  routes don't check the database.
+- A Google account nobody has granted anything gets a user row (clearance 1,
+  no roles) and sees "No access yet". `/query` and `/draft` return 403 for
+  it, upload returns 403, and `/me` only describes the account itself.
+
+To sign in locally against the composed API:
+
+```powershell
+# API: bypass off, your OAuth web client ID as the audience, a real random
+# APP_JWT_SECRET, and the frontend's origin allowed for credentialed CORS.
+$env:DEV_AUTH_BYPASS = "false"
+$env:APP_ENV = "production"
+$env:OAUTH_AUDIENCE = "<your-client-id>.apps.googleusercontent.com"
+$env:CORS_ALLOWED_ORIGINS = "http://localhost:3000"
+
+# Frontend: NEXT_PUBLIC_GOOGLE_CLIENT_ID is the same client ID.
+cd frontend
+$env:NEXT_PUBLIC_GOOGLE_CLIENT_ID = "<your-client-id>.apps.googleusercontent.com"
+npm run dev     # or: npm run build, then serve frontend/out/ on port 3000
+```
+
+In Google Cloud Console, list both `http://localhost:3000` and
+`http://localhost` as authorized JavaScript origins for the client. Without
+the second one, Google's button can fail with "The given origin is not
+allowed for the given client ID". Sign in once, then grant access with
+`scripts/seed_authz.py --user-id <number> ...` (see "API service") and reload.
+
+**What was tested:** the unit tests, plus a manual run on my machine with
+Docker Compose (`APP_ENV=production`, bypass off) and the static export
+served on `http://localhost:3000` in Chrome: sign-in, "No access yet" before
+any grant, access after granting acme, an acme upload and query, sign-out,
+and reloads before and after signing out. **Not tested on AWS.**
+
+Limitations:
+
+- **The Streamlit UI still works only with DEV_AUTH_BYPASS.** It never used
+  `/auth/login` or `/auth/refresh`, and has no Google sign-in.
+- **Admins see a fixed engagement list.** An admin with no explicit
+  memberships gets `NEXT_PUBLIC_FALLBACK_ENGAGEMENTS` in the selector; there's
+  no endpoint listing every engagement yet. Non-admins only ever see their
+  own memberships.
+- **Chunks with no engagement** (CLI ingests without `--engagement`) are
+  readable by any account that has at least one engagement or is an admin,
+  as before. Accounts with no access can't query, so they can't reach them.
+- **The local run used `http://localhost`.** Browsers accept `Secure` cookies
+  there; anywhere else, sign-in needs HTTPS. Hosting is a future step; see
+  `docs/aws-deployment.md`.
+
+### Static export
+
+`next.config.js` sets `output: "export"` and `trailingSlash: true`, so
+`npm run build` writes plain files to `frontend/out/` (for example
+`management/index.html`) for static hosting such as S3 and CloudFront.
+`npm run dev` works as before. `npm start` doesn't apply to a static export;
+serve `out/` instead. `NEXT_PUBLIC_*` values are baked in at build time.
 
 The Management area (`frontend/app/management/page.tsx`) only *renders* for
 high-clearance/admin users per `/me` — that gate is convenience/UI tidiness,
@@ -499,6 +591,7 @@ membership on every endpoint regardless of what the frontend shows or hides.
 ```bash
 cd frontend
 npm run test    # vitest, fetch mocked — no live backend needed, not run in CI against one
+npm run build   # static export to out/
 ```
 
 ### A note on `npm install` audit output
@@ -569,7 +662,8 @@ src/consultrag/
   authz/        Postgres-backed RBAC: users + engagement_memberships
   auth/         authentication: OIDC verification, app session tokens,
                 DEV_AUTH_BYPASS (auth != authz — see "API service" above)
-  api/          FastAPI service: /auth/login, /auth/refresh, /ingest/upload,
+  api/          FastAPI service: /auth/login, /auth/refresh, /auth/logout,
+                /ingest/upload,
                 /ingest (development only), /query, /draft, /me
 scripts/        ingest.py, query.py, run_eval.py, migrate_pg.py,
                 migrate_authz.py, seed_authz.py
@@ -578,6 +672,7 @@ ui/             api_client.py (thin httpx wrapper, no business logic),
 frontend/       Next.js + TypeScript client (lib/api.ts, lib/auth.ts) —
                 see "Frontend (Next.js)" above
 tests/          redaction, chunking, retrieval, reranking, pgvectorstore,
-                authz_repository, oidc, app_token, api, api_client,
+                authz_repository, oidc, app_token, google_signin,
+                seed_authz, api, api_client,
                 end-to-end access control
 ```

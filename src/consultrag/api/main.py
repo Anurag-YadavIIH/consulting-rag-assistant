@@ -39,6 +39,13 @@ async def lifespan(app: FastAPI):
     ensure_dev_auth_bypass_is_safe(settings.dev_auth_bypass, settings.app_env)
     if settings.dev_auth_bypass:
         warn_bypass_active()
+    elif not settings.oauth_audience:
+        # Not fatal (deployments without browser sign-in still start), but
+        # loud: OIDCVerifier.verify() refuses every login until it's set.
+        logger.warning(
+            "OAUTH_AUDIENCE is not set: every POST /auth/login will be rejected. "
+            "Set it to your OAuth client ID to enable sign-in."
+        )
 
     # Prefetch the OIDC discovery document so the first real request doesn't
     # pay that latency. A transient failure here doesn't crash startup —
@@ -53,15 +60,30 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="ConsultRAG API", version=API_VERSION, lifespan=lifespan)
 
+
+def add_cors(app: FastAPI, origins: list[str]) -> None:
+    """Credentialed CORS (the refresh cookie) for an explicit origin list
+    only. A wildcard is refused outright: with credentials allowed,
+    Starlette answers a "*" by echoing back whatever Origin the request
+    sent, which would let any website make authenticated calls."""
+    if any(o == "*" for o in origins):
+        raise RuntimeError(
+            "CORS_ALLOWED_ORIGINS must list explicit origins; '*' is not allowed "
+            "because the API uses credentialed requests (the refresh cookie)."
+        )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+
 # Fail-closed by default: CORS_ALLOWED_ORIGINS is empty unless explicitly
 # configured (see config.py), so no browser origin is allowed until someone
 # sets it — e.g. http://localhost:3000 for local frontend/ dev.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_allowed_origins_list,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+add_cors(app, settings.cors_allowed_origins_list)
 
 app.include_router(auth_routes.router)
 app.include_router(ingest_routes.router)

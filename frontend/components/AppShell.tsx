@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { me, type MeResponse } from "../lib/api";
+import { useCallback, useEffect, useState } from "react";
+import { me, NotAuthenticatedError, type MeResponse } from "../lib/api";
+import { loginWithGoogleCredential, LoginError, onSignedOut, signOut } from "../lib/auth";
 import { MeContext } from "../lib/meContext";
 import { ErrorBanner } from "./ErrorBanner";
+import { SignInScreen } from "./SignInScreen";
 import { UserPanel } from "./UserPanel";
 import { EngagementSelector } from "./EngagementSelector";
 
@@ -24,33 +26,68 @@ const FALLBACK_ENGAGEMENTS = (
 // nothing that the backend doesn't already enforce.
 const MANAGEMENT_CLEARANCE_THRESHOLD = 2;
 
-export function AppShell({ children }: { children: React.ReactNode }) {
-  const [meInfo, setMeInfo] = useState<MeResponse | null>(null);
-  const [error, setError] = useState<unknown>(null);
-  const [engagement, setEngagement] = useState<string | undefined>(undefined);
+export type ShellState =
+  | { kind: "loading" }
+  | { kind: "signedOut"; error?: string | null; busy?: boolean }
+  | { kind: "error"; error: unknown }
+  | { kind: "ready"; meInfo: MeResponse };
 
-  useEffect(() => {
-    me()
-      .then((res) => {
-        setMeInfo(res);
-        const options =
-          res.engagements.length > 0 ? res.engagements : FALLBACK_ENGAGEMENTS;
-        setEngagement(options[0]);
-      })
-      .catch((err) => setError(err));
-  }, []);
+/** No engagement membership and not an admin: a signed-in account nobody
+ * has granted anything yet. The API refuses its queries (403) as well. */
+export function hasNoAccess(meInfo: MeResponse): boolean {
+  return !meInfo.is_admin && meInfo.engagements.length === 0;
+}
 
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-6">
-        <div className="max-w-md w-full">
-          <ErrorBanner error={error} />
+/** Engagements to offer. Admins with no explicit memberships get the
+ * build-time fallback list (there's no endpoint listing all engagements
+ * yet); everyone else gets exactly their memberships. */
+export function engagementOptionsFor(meInfo: MeResponse): string[] {
+  if (meInfo.engagements.length > 0) return meInfo.engagements;
+  return meInfo.is_admin ? FALLBACK_ENGAGEMENTS : [];
+}
+
+export function NoAccessPanel({
+  meInfo,
+  onSignOut,
+}: {
+  meInfo: MeResponse;
+  onSignOut: () => void;
+}) {
+  return (
+    <div className="min-h-screen flex items-center justify-center p-6">
+      <div className="max-w-md w-full space-y-4">
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <div className="font-medium">No access yet</div>
+          <p className="mt-1">
+            You&apos;re signed in, but your account hasn&apos;t been added to any
+            engagement. Ask an administrator to grant you access, then reload this page.
+          </p>
         </div>
+        <UserPanel meInfo={meInfo} onSignOut={onSignOut} />
       </div>
-    );
-  }
+    </div>
+  );
+}
 
-  if (!meInfo) {
+/** What the shell renders for a given state. Pages (children) render ONLY
+ * in the ready state for an account with access; every other state shows
+ * no app data at all. */
+export function ShellView({
+  state,
+  engagement,
+  setEngagement,
+  onCredential,
+  onSignOut,
+  children,
+}: {
+  state: ShellState;
+  engagement: string | undefined;
+  setEngagement: (engagement: string) => void;
+  onCredential: (idToken: string) => void;
+  onSignOut: () => void;
+  children: React.ReactNode;
+}) {
+  if (state.kind === "loading") {
     return (
       <div className="min-h-screen flex items-center justify-center text-sm text-slate-400">
         Loading...
@@ -58,9 +95,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const engagementOptions =
-    meInfo.engagements.length > 0 ? meInfo.engagements : FALLBACK_ENGAGEMENTS;
+  if (state.kind === "signedOut") {
+    return <SignInScreen onCredential={onCredential} error={state.error} busy={state.busy} />;
+  }
 
+  if (state.kind === "error") {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <div className="max-w-md w-full">
+          <ErrorBanner error={state.error} />
+        </div>
+      </div>
+    );
+  }
+
+  const { meInfo } = state;
+  if (hasNoAccess(meInfo)) {
+    return <NoAccessPanel meInfo={meInfo} onSignOut={onSignOut} />;
+  }
+
+  const engagementOptions = engagementOptionsFor(meInfo);
   const showManagementLink =
     meInfo.is_admin || meInfo.clearance >= MANAGEMENT_CLEARANCE_THRESHOLD;
 
@@ -71,7 +125,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="min-h-screen flex">
         <aside className="w-64 border-r border-slate-200 bg-white p-4 space-y-4">
           <div className="font-semibold text-slate-800">ConsultRAG</div>
-          <UserPanel meInfo={meInfo} />
+          <UserPanel meInfo={meInfo} onSignOut={onSignOut} />
           <EngagementSelector
             options={engagementOptions}
             value={engagement}
@@ -97,5 +151,70 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main className="flex-1 p-6">{children}</main>
       </div>
     </MeContext.Provider>
+  );
+}
+
+export function AppShell({ children }: { children: React.ReactNode }) {
+  const [state, setState] = useState<ShellState>({ kind: "loading" });
+  const [engagement, setEngagement] = useState<string | undefined>(undefined);
+
+  const loadMe = useCallback(async () => {
+    try {
+      const res = await me();
+      setEngagement(engagementOptionsFor(res)[0]);
+      setState({ kind: "ready", meInfo: res });
+    } catch (err) {
+      if (err instanceof NotAuthenticatedError) {
+        setState({ kind: "signedOut" });
+      } else {
+        setState({ kind: "error", error: err });
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    // Any failed refresh or sign-out, from anywhere in the app, drops back
+    // to the sign-in screen and unmounts every page.
+    const unsubscribe = onSignedOut(() => {
+      setEngagement(undefined);
+      setState({ kind: "signedOut" });
+    });
+    // First load (including after a reload): /me with no access token gets
+    // a 401, which authFetch turns into one refresh attempt via the cookie.
+    void loadMe();
+    return unsubscribe;
+  }, [loadMe]);
+
+  const onCredential = useCallback(
+    async (idToken: string) => {
+      setState({ kind: "signedOut", busy: true });
+      try {
+        await loginWithGoogleCredential(idToken);
+      } catch (e) {
+        setState({
+          kind: "signedOut",
+          error: e instanceof LoginError ? e.message : "Sign-in failed. Please try again.",
+        });
+        return;
+      }
+      await loadMe();
+    },
+    [loadMe]
+  );
+
+  const onSignOut = useCallback(() => {
+    void signOut();
+  }, []);
+
+  return (
+    <ShellView
+      state={state}
+      engagement={engagement}
+      setEngagement={setEngagement}
+      onCredential={onCredential}
+      onSignOut={onSignOut}
+    >
+      {children}
+    </ShellView>
   );
 }

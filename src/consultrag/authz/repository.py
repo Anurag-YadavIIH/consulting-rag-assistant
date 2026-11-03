@@ -19,6 +19,7 @@ class AuthzInfo:
     roles: frozenset[str]
     engagements: list[str]
     clearance: int
+    email: str = ""
 
 
 class AuthzRepository:
@@ -47,11 +48,11 @@ class AuthzRepository:
 
     def get_user_authz(self, user_id: int) -> AuthzInfo:
         with self._conn.cursor() as cur:
-            cur.execute("SELECT clearance FROM users WHERE id = %(id)s", {"id": user_id})
+            cur.execute("SELECT clearance, email FROM users WHERE id = %(id)s", {"id": user_id})
             row = cur.fetchone()
             if row is None:
                 raise ValueError(f"no such user_id: {user_id}")
-            clearance = row[0]
+            clearance, email = row
 
             cur.execute(
                 "SELECT engagement, role FROM engagement_memberships WHERE user_id = %(id)s",
@@ -69,11 +70,42 @@ class AuthzRepository:
                 roles.add(role)
                 engagements.append(engagement)
 
-        return AuthzInfo(roles=frozenset(roles), engagements=engagements, clearance=clearance)
+        return AuthzInfo(
+            roles=frozenset(roles), engagements=engagements, clearance=clearance, email=email
+        )
 
     def build_user(self, user_id: int) -> User:
         info = self.get_user_authz(user_id)
-        return User(user_id=str(user_id), roles=info.roles, clearance=info.clearance)
+        return User(
+            user_id=str(user_id), roles=info.roles, clearance=info.clearance, email=info.email
+        )
+
+    def user_exists(self, user_id: int) -> bool:
+        with self._conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM users WHERE id = %(id)s", {"id": user_id})
+            found = cur.fetchone() is not None
+        self._conn.commit()
+        return found
+
+    def revoke_refresh_tokens(self, user_id: int) -> None:
+        """Sign-out: every refresh token this user holds, in any browser,
+        stops working at its next use. Access tokens already issued stay
+        valid until they expire (they're never checked against the DB)."""
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "UPDATE users SET refresh_version = refresh_version + 1 WHERE id = %(id)s",
+                {"id": user_id},
+            )
+        self._conn.commit()
+
+    def refresh_version(self, user_id: int) -> int:
+        with self._conn.cursor() as cur:
+            cur.execute("SELECT refresh_version FROM users WHERE id = %(id)s", {"id": user_id})
+            row = cur.fetchone()
+        self._conn.commit()
+        if row is None:
+            raise ValueError(f"no such user_id: {user_id}")
+        return row[0]
 
     def add_membership(self, user_id: int, engagement: str | None, role: str) -> None:
         """engagement=None grants a global role (e.g. add_membership(uid, None, "admin"))."""

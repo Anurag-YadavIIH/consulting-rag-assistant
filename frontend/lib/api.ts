@@ -9,10 +9,10 @@
  * or RAG engine directly; it only calls the API over HTTP.
  */
 
-import { getAuthHeaders } from "./auth";
+import { authFetch } from "./auth";
+import { API_BASE_URL } from "./config";
 
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+export { API_BASE_URL };
 
 // --- types, mirroring src/consultrag/api/schemas.py ---------------------
 
@@ -46,6 +46,7 @@ export interface MeResponse {
   engagements: string[];
   is_admin: boolean;
   clearance: number;
+  email?: string;
 }
 
 // --- typed errors ---------------------------------------------------------
@@ -115,11 +116,11 @@ async function request<T>(
   const isForm = body instanceof FormData;
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}${path}`, {
+    // authFetch (lib/auth.ts) adds the access token and handles one
+    // refresh-and-retry on a 401.
+    res = await authFetch(`${API_BASE_URL}${path}`, {
       method,
-      headers: isForm
-        ? { ...getAuthHeaders() }
-        : { "Content-Type": "application/json", ...getAuthHeaders() },
+      headers: isForm ? {} : { "Content-Type": "application/json" },
       body: isForm
         ? body
         : body !== undefined

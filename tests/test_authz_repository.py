@@ -124,3 +124,29 @@ def test_build_user_works_with_real_access_policy(repo):
     assert policy.can_read(user, {"engagement": "acme", "clearance": 2})
     assert not policy.can_read(user, {"engagement": "globex", "clearance": 1})
     assert not policy.can_read(user, {"engagement": "acme", "clearance": 3})
+
+
+def test_new_account_has_no_roles_and_carries_its_email(repo):
+    user_id = repo.get_or_create_user(_sub(), "new@example.com")
+    user = repo.build_user(user_id)
+    assert user.roles == frozenset()
+    assert not AccessPolicy.is_admin(user) and AccessPolicy.engagements_for(user) == []
+    assert user.email == "new@example.com"
+
+
+def test_user_exists(repo):
+    user_id = repo.get_or_create_user(_sub(), "x@example.com")
+    assert repo.user_exists(user_id)
+    assert not repo.user_exists(-1)
+
+
+def test_revoke_refresh_tokens_increments_only_that_users_version(repo):
+    a = repo.get_or_create_user(_sub(), "a@example.com")
+    b = repo.get_or_create_user(_sub(), "b@example.com")
+    assert repo.refresh_version(a) == 0
+    repo.revoke_refresh_tokens(a)
+    repo.revoke_refresh_tokens(a)
+    assert repo.refresh_version(a) == 2
+    assert repo.refresh_version(b) == 0
+    with pytest.raises(ValueError):
+        repo.refresh_version(-1)

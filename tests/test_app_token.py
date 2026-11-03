@@ -48,6 +48,7 @@ class _FakeAuthzRepository:
         self._next_id = 1
         self._by_sub: dict[str, int] = {}
         self._authz: dict[int, dict] = {}  # user_id -> {roles, engagements, clearance}
+        self._versions: dict[int, int] = {}  # user_id -> refresh version
 
     def get_or_create_user(self, google_sub: str, email: str) -> int:
         if google_sub not in self._by_sub:
@@ -58,8 +59,18 @@ class _FakeAuthzRepository:
         return self._by_sub[google_sub]
 
     def build_user(self, user_id: int) -> User:
+        if user_id not in self._authz:
+            raise ValueError(f"no such user_id: {user_id}")  # same as the real repository
         info = self._authz[user_id]
         return User(user_id=str(user_id), roles=info["roles"], clearance=info["clearance"])
+
+    def refresh_version(self, user_id: int) -> int:
+        if user_id not in self._authz:
+            raise ValueError(f"no such user_id: {user_id}")
+        return self._versions.get(user_id, 0)
+
+    def revoke_refresh_tokens(self, user_id: int) -> None:
+        self._versions[user_id] = self._versions.get(user_id, 0) + 1
 
     def set_authz(self, user_id: int, *, roles: frozenset, clearance: int) -> None:
         self._authz[user_id] = {"roles": roles, "clearance": clearance}
@@ -86,7 +97,8 @@ def _jwk(public_key, kid: str) -> dict:
 def _make_google_style_token(private_pem, kid: str, *, sub="google-sub-abc", aud=AUDIENCE) -> str:
     now = int(time.time())
     claims = {
-        "sub": sub, "email": "person@example.com", "iss": ISSUER, "aud": aud,
+        "sub": sub, "email": "person@example.com", "email_verified": True,
+        "iss": ISSUER, "aud": aud,
         "iat": now, "exp": now + 300,
     }
     return jwt.encode(claims, private_pem, algorithm="RS256", headers={"kid": kid})

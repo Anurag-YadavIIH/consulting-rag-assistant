@@ -22,6 +22,7 @@ class User:
     user_id: str
     roles: frozenset[str]          # e.g. {"analyst", "engagement:acme"}
     clearance: int = 1             # 1 = standard, higher = more sensitive
+    email: str = ""                # display only; never used for authorization
 
     @staticmethod
     def make(user_id: str, roles: list[str], clearance: int = 1) -> "User":

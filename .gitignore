@@ -16,6 +16,7 @@ data/corpus/
 # Next.js frontend (frontend/) — separate dependency set from Python
 frontend/node_modules/
 frontend/.next/
+frontend/out/
 frontend/tsconfig.tsbuildinfo
 
 # Local frontend settings

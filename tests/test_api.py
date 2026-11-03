@@ -441,6 +441,7 @@ class _FakeAuthzRepository:
         self._next_id = 1
         self._by_sub: dict[str, int] = {}
         self._authz: dict[int, dict] = {}
+        self._versions: dict[int, int] = {}
 
     def get_or_create_user(self, google_sub: str, email: str) -> int:
         if google_sub not in self._by_sub:
@@ -451,8 +452,18 @@ class _FakeAuthzRepository:
         return self._by_sub[google_sub]
 
     def build_user(self, user_id: int) -> User:
+        if user_id not in self._authz:
+            raise ValueError(f"no such user_id: {user_id}")
         info = self._authz[user_id]
         return User(user_id=str(user_id), roles=info["roles"], clearance=info["clearance"])
+
+    def refresh_version(self, user_id: int) -> int:
+        if user_id not in self._authz:
+            raise ValueError(f"no such user_id: {user_id}")
+        return self._versions.get(user_id, 0)
+
+    def revoke_refresh_tokens(self, user_id: int) -> None:
+        self._versions[user_id] = self._versions.get(user_id, 0) + 1
 
 
 def test_login_with_invalid_google_token_is_401(client, monkeypatch):
@@ -463,7 +474,8 @@ def test_login_with_invalid_google_token_is_401(client, monkeypatch):
 
 def test_refresh_with_invalid_token_is_401(client):
     app.dependency_overrides[get_authz_repo] = lambda: _FakeAuthzRepository()
-    resp = client.post("/auth/refresh", json={"refresh_token": "not-a-real-token"})
+    client.cookies.set("consultrag_refresh", "not-a-real-token", path="/auth")
+    resp = client.post("/auth/refresh", headers={"X-ConsultRAG-CSRF": "1"})
     assert resp.status_code == 401
 
 

@@ -22,6 +22,13 @@ def ensure_authz_schema(conn) -> None:
             )
             """
         )
+        # Refresh tokens carry the version current when they were issued;
+        # sign-out increments it, so every older refresh token is rejected.
+        # Added with IF NOT EXISTS so existing databases upgrade in place.
+        cur.execute(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
+            "refresh_version INT NOT NULL DEFAULT 0"
+        )
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS engagement_memberships (

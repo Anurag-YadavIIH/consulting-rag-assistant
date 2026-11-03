@@ -28,6 +28,10 @@ def authenticate_google_id_token(
     sub = claims.get("sub")
     if not sub:
         raise OIDCError("token missing 'sub' claim")
+    # The email is stored and shown as the signed-in identity, so it must be
+    # one the provider has verified. Strictly the boolean true, not "true".
+    if claims.get("email_verified") is not True:
+        raise OIDCError("token email is not verified")
     email = claims.get("email", "")
     user_id = authz_repo.get_or_create_user(sub, email)
     return authz_repo.build_user(user_id)

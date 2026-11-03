@@ -49,8 +49,14 @@ def get_oidc_verifier() -> OIDCVerifier:
     return _verifier
 
 
-def get_authz_repo() -> AuthzRepository:
-    return AuthzRepository()
+def get_authz_repo():
+    # One connection per request, closed afterwards (a yield dependency), so
+    # logins and refreshes don't leave connections open.
+    repo = AuthzRepository()
+    try:
+        yield repo
+    finally:
+        repo.close()
 
 
 def get_current_app_user(authorization: str | None = Header(None)) -> User:
@@ -71,7 +77,10 @@ def get_current_app_user(authorization: str | None = Header(None)) -> User:
     except (OIDCError, AppTokenError) as e:
         raise HTTPException(status_code=401, detail=str(e)) from e
     return User(
-        user_id=claims["sub"], roles=frozenset(claims["roles"]), clearance=claims["clearance"]
+        user_id=claims["sub"],
+        roles=frozenset(claims["roles"]),
+        clearance=claims["clearance"],
+        email=claims.get("email", ""),
     )
 
 
