@@ -9,6 +9,13 @@
 # To actually reach the API directly, also set:
 # debug_bypass_origin_check = true
 
+# The first admin: this email becomes admin at its first verified Google
+# sign-in. Personal data, so keep it only in terraform.tfvars (gitignored).
+# initial_admin_emails = ["you@example.com"]
+
+# Optional: only these domains may sign in (plus invited emails and the above).
+# allowed_email_domains = ["example.com"]
+
 # Enforce the Content-Security-Policy instead of report-only. Only after the
 # post-deploy checks show no CSP reports in the browser console.
 # csp_enforce = true

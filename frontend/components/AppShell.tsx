@@ -46,14 +46,17 @@ export interface NavItem {
   label: string;
 }
 
-/** Sidebar navigation. Activity is only offered to admins; the API's
- * /admin/activity is the real check (403 for everyone else). */
+/** Sidebar navigation. Activity and Team are only offered to admins; the
+ * API's /admin routes are the real check (403 for everyone else). */
 export function navItemsFor(meInfo: MeResponse): NavItem[] {
   const items: NavItem[] = [
     { href: "/", label: "Ask" },
     { href: "/documents/", label: "Documents" },
   ];
-  if (meInfo.is_admin) items.push({ href: "/activity/", label: "Activity" });
+  if (meInfo.is_admin) {
+    items.push({ href: "/activity/", label: "Activity" });
+    items.push({ href: "/team/", label: "Team" });
+  }
   return items;
 }
 

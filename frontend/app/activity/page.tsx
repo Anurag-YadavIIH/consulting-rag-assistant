@@ -18,6 +18,7 @@ const FILTERS: Array<{ value: "" | ActivityEventType; label: string }> = [
   { value: "ingest", label: "Uploads" },
   { value: "delete", label: "Deletions" },
   { value: "query", label: "Questions" },
+  { value: "access", label: "Access changes" },
 ];
 
 /**
@@ -71,7 +72,7 @@ export default function ActivityPage() {
       <header>
         <h1 className="text-title text-ink">Activity</h1>
         <p className="mt-2 max-w-prose text-base text-muted">
-          Uploads, deletions and questions, newest first. People appear by user number; the
+          Uploads, deletions, questions and access changes, newest first. People appear by user number; the
           audit log never stores question text or email addresses.
         </p>
       </header>

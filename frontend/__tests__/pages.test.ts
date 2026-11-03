@@ -72,3 +72,10 @@ it("the primary button keeps the disabled attribute and a muted accent look", as
   expect(out).toContain("disabled:bg-accent-muted");
   expect(out).toContain("disabled:text-on-accent-muted");
 });
+
+it("Team tells non-admins it's for administrators and loads nothing", async () => {
+  const { default: TeamPage } = await import("../app/team/page");
+  const out = withMe(false, createElement(TeamPage));
+  expect(out).toContain("Admins only");
+  expect(out).not.toContain("Invite someone");
+});

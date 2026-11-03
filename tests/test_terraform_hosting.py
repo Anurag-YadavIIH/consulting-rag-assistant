@@ -46,7 +46,20 @@ def _cloudfront_matches(pattern: str, path: str) -> bool:
 
 
 def _app_paths() -> set[str]:
-    return {r.path for r in app.routes if hasattr(r, "path")}
+    # The OpenAPI schema lists every API route. (app.routes isn't enough:
+    # this FastAPI version wraps included routers in objects without a
+    # `path`, which once hid every route but /health from this test.)
+    paths = set(app.openapi()["paths"])
+    paths |= {r.path for r in app.routes if hasattr(r, "path")}  # docs routes
+    return paths
+
+
+def test_route_discovery_sees_the_real_api_routes():
+    paths = _app_paths()
+    for expected in ("/auth/login", "/auth/refresh", "/me", "/query", "/documents",
+                     "/ingest/upload", "/admin/activity", "/admin/members"):
+        assert expected in paths, expected
+    assert len(paths - DOC_ROUTES) >= 15
 
 
 def test_every_api_route_is_routed_to_the_load_balancer():
@@ -122,6 +135,28 @@ run "timeout_above_quota_refused" {
   variables { api_origin_read_timeout = 180 }
   expect_failures = [var.api_origin_read_timeout]
 }
+run "initial_admin_emails_must_be_emails" {
+  command = plan
+  variables { initial_admin_emails = ["not an email"] }
+  expect_failures = [var.initial_admin_emails]
+}
+run "allowed_domains_must_be_domains" {
+  command = plan
+  variables { allowed_email_domains = ["@example.com"] }
+  expect_failures = [var.allowed_email_domains]
+}
+run "invitation_ttl_in_range" {
+  command = plan
+  variables { invitation_ttl_days = 0 }
+  expect_failures = [var.invitation_ttl_days]
+}
+run "valid_team_settings_pass" {
+  command = plan
+  variables {
+    initial_admin_emails  = ["first.admin@example.com"]
+    allowed_email_domains = ["example.com"]
+  }
+}
 run "csp_starts_report_only" {
   command = plan
   assert {
@@ -144,4 +179,4 @@ run "csp_starts_report_only" {
     result = subprocess.run(["terraform", "test", "-no-color"], cwd=tmp_path,
                             capture_output=True, text=True, env=env, timeout=300)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "8 passed, 0 failed" in result.stdout
+    assert "12 passed, 0 failed" in result.stdout

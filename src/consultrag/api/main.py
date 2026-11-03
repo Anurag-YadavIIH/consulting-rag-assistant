@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from ..auth.access_settings import ensure_access_settings_valid
 from ..auth.app_token import ensure_app_jwt_secret_configured
 from ..auth.dev_bypass import ensure_dev_auth_bypass_is_safe, warn_bypass_active
 from ..config import settings
@@ -24,6 +25,7 @@ from .routes import draft as draft_routes
 from .routes import ingest as ingest_routes
 from .routes import me as me_routes
 from .routes import query as query_routes
+from .routes import team as team_routes
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +56,10 @@ async def lifespan(app: FastAPI):
     # Fail closed AND loud: refuse to start if bypass is on without APP_ENV
     # explicitly confirming a dev environment; otherwise warn visibly once.
     ensure_dev_auth_bypass_is_safe(settings.dev_auth_bypass, settings.app_env)
+
+    # Fail closed: refuse to start on a malformed INITIAL_ADMIN_EMAILS or
+    # ALLOWED_EMAIL_DOMAINS rather than guess what was meant.
+    ensure_access_settings_valid(settings.initial_admin_emails, settings.allowed_email_domains)
     if settings.dev_auth_bypass:
         warn_bypass_active()
     elif not settings.oauth_audience:
@@ -109,6 +115,7 @@ app.include_router(draft_routes.router)
 app.include_router(me_routes.router)
 app.include_router(documents_routes.router)
 app.include_router(admin_routes.router)
+app.include_router(team_routes.router)
 
 
 @app.get("/health", tags=["health"])

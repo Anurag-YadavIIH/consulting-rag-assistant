@@ -81,6 +81,10 @@ export async function loginWithGoogleCredential(idToken: string): Promise<void> 
   if (!res.ok) {
     // The API's detail can describe why verification failed; it never
     // contains the token itself.
+    if (res.status === 403) {
+      // ALLOWED_EMAIL_DOMAINS refused the account; the API says no more.
+      throw new LoginError(403, "This Google account isn't allowed to sign in here. Ask an administrator for an invitation.");
+    }
     throw new LoginError(res.status, "Sign-in failed. Please try again.");
   }
   const body = (await res.json()) as { access_token: string };

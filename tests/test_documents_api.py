@@ -300,3 +300,23 @@ def test_hybrid_retriever_labels_dense_and_keyword_only_results():
            for i in r.retrieve(np.array([1, 0, 0, 0], dtype=np.float32), "ZEBRA", fused_k=2)}
     assert out["dense1"] == "similarity"
     assert out["kw"] == "keyword"
+
+
+def test_analyst_and_manager_ask_the_same_question_only_manager_gets_clearance_2(env):
+    c, _, engine, _, put, _ = env
+    put("pricing_memo.txt", "Acme pricing memo: the MANAGER_ONLY_TOKEN discount floor is 18 percent.", clearance=2)
+    put("pricing_public.txt", "Acme pricing note: list prices are published quarterly.", clearance=1)
+    engine.retriever.refresh()
+    analyst_user = User.make("11", roles=["analyst", "engagement:acme"], clearance=1)
+    manager_user = User.make("12", roles=["manager", "engagement:acme"], clearance=2)
+    q = {"question": "What is the MANAGER_ONLY_TOKEN discount floor in the pricing memo?", "engagement": "acme"}
+
+    a = c.post("/query", json=q, headers=_bearer(analyst_user)).json()
+    m = c.post("/query", json=q, headers=_bearer(manager_user)).json()
+
+    a_text = " ".join(x["text"] for x in a["citations"]) + a["answer"]
+    m_text = " ".join(x["text"] for x in m["citations"]) + m["answer"]
+    assert "MANAGER_ONLY_TOKEN" not in a_text
+    assert all(x["source_path"] != "pricing_memo.txt" for x in a["citations"])
+    assert any(x["source_path"] == "pricing_memo.txt" for x in m["citations"])
+    assert "MANAGER_ONLY_TOKEN" in m_text

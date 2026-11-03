@@ -57,6 +57,40 @@ variable "oauth_audience" {
   default     = "778432443327-tfr98qv01htq229443g0kjnvlkp2md4h.apps.googleusercontent.com"
 }
 
+variable "initial_admin_emails" {
+  description = "Emails that become a global admin the first time they sign in with a verified Google account (once per account). Personal data: set it in terraform.tfvars (gitignored), never in committed files."
+  type        = list(string)
+  default     = []
+  sensitive   = true
+
+  validation {
+    condition     = alltrue([for e in var.initial_admin_emails : can(regex("^[^@\\s,]+@[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+$", e))])
+    error_message = "Each entry must be a single email address."
+  }
+}
+
+variable "allowed_email_domains" {
+  description = "Optional. When set, only these email domains may sign in, plus invited emails and initial_admin_emails."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for d in var.allowed_email_domains : can(regex("^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+$", d))])
+    error_message = "Each entry must be a domain such as example.com (no @, no spaces)."
+  }
+}
+
+variable "invitation_ttl_days" {
+  description = "Days an invitation stays usable."
+  type        = number
+  default     = 14
+
+  validation {
+    condition     = var.invitation_ttl_days >= 1 && var.invitation_ttl_days <= 90
+    error_message = "Between 1 and 90 days."
+  }
+}
+
 variable "csp_enforce" {
   description = "false: send the Content-Security-Policy as Report-Only (violations are only reported in the browser console). true: enforce it. Switch only after the post-deploy checks show no reports during sign-in, upload and query."
   type        = bool

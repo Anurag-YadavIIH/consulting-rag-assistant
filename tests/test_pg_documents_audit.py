@@ -310,7 +310,8 @@ def test_admin_activity_paginates_and_shows_ids_not_text(admin_client, store):
     assert [e["document"] for e in page1["events"]] == ["doc2.txt", "doc1.txt"]
     assert page1["next_before"] == page1["events"][-1]["id"]
     assert set(page1["events"][0]) == {"id", "ts", "event", "user_id", "engagement", "document",
-                                        "n_chunks", "redaction_counts", "n_retrieved", "n_blocked"}
+                                        "n_chunks", "redaction_counts", "n_retrieved", "n_blocked",
+                                        "action", "target_user_id", "invitation_id", "clearance"}
     page2 = admin_client.get(f"/admin/activity?limit=2&before={page1['next_before']}",
                              headers=_bearer(admin)).json()
     assert page2["events"][0]["document"] == "doc0.txt"

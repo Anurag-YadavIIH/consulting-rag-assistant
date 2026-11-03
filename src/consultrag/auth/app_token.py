@@ -131,11 +131,17 @@ def login_with_google_id_token(
     oidc_verifier: OIDCVerifier,
     authz_repo: AuthzRepository,
     secret: str,
+    *,
+    initial_admin_emails: str | None = None,
+    allowed_email_domains: str | None = None,
 ) -> TokenPair:
     """POST /auth/login's logic: verify the Google ID token (Stage 2),
-    upsert+load the user (Stage 1), issue a fresh token pair reflecting
-    CURRENT authz."""
-    user = authenticate_google_id_token(authorization_header, oidc_verifier, authz_repo)
+    upsert+load the user (Stage 1) applying team-access rules, issue a
+    fresh token pair reflecting CURRENT authz."""
+    user = authenticate_google_id_token(
+        authorization_header, oidc_verifier, authz_repo,
+        initial_admin_emails=initial_admin_emails, allowed_email_domains=allowed_email_domains,
+    )
     version = authz_repo.refresh_version(int(user.user_id))
     return TokenPair(
         access_token=issue_app_token(user, secret),

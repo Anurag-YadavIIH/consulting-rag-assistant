@@ -204,3 +204,12 @@ it("sign-out still ends the local session when the API is unreachable", async ()
   expect(getAuthHeaders()).toEqual({});
   expect(signedOut).toHaveBeenCalled();
 });
+
+it("a sign-in refused by the domain rule (403) explains what to do", async () => {
+  mockApi({ "/auth/login": [() => json(403, { detail: "this account isn't allowed to sign in here" })] });
+  await expect(loginWithGoogleCredential("google-id-token")).rejects.toMatchObject({
+    status: 403,
+    message: expect.stringContaining("isn't allowed to sign in here"),
+  });
+  expect(getAuthHeaders()).toEqual({});
+});

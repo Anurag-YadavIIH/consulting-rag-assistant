@@ -104,13 +104,16 @@ it("Activity is in the sidebar for admins only", async () => {
     "Ask",
     "Documents",
     "Activity",
+    "Team",
   ]);
 
   const memberHtml = view({ kind: "ready", meInfo: member });
   expect(memberHtml).not.toContain('href="/activity/"');
+  expect(memberHtml).not.toContain('href="/team/"');
   expect(memberHtml).toContain('href="/documents/"');
   const adminHtml = view({ kind: "ready", meInfo: { ...admin, engagements: ["acme"] } });
   expect(adminHtml).toContain('href="/activity/"');
+  expect(adminHtml).toContain('href="/team/"');
 });
 
 it("the sidebar has a labelled menu button for small screens", () => {

@@ -11,9 +11,31 @@ export function eventLabel(event: string): string {
   return EVENT_LABELS[event] ?? event;
 }
 
-/** A plain-language summary of an event's counts. No question text exists
+const ACTION_LABELS: Record<string, string> = {
+  initial_admin_granted: "Initial admin granted",
+  invitation_created: "Invitation created",
+  invitation_created_admin: "Admin invitation created",
+  invitation_revoked: "Invitation revoked",
+  invitation_accepted: "Invitation accepted",
+  admin_granted: "Admin granted",
+  admin_revoked: "Admin removed",
+  clearance_changed: "Clearance changed",
+  membership_set: "Engagement access set",
+  membership_removed: "Engagement access removed",
+  access_removed: "All access removed",
+};
+
+/** A plain-language summary of an event (counts, or what access changed). No question text exists
  * in the audit log to show. */
 export function eventDetails(e: ActivityEvent): string {
+  if (e.event === "access") {
+    const parts = [ACTION_LABELS[e.action ?? ""] ?? e.action ?? "Access change"];
+    if (e.target_user_id) parts.push(`for user #${e.target_user_id}`);
+    else if (e.invitation_id) parts.push(`invitation #${e.invitation_id}`);
+    let out = parts.join(" ");
+    if (e.clearance != null) out += `, clearance ${e.clearance}`;
+    return out;
+  }
   if (e.event === "query") {
     const parts = [`${e.n_retrieved ?? 0} passage${e.n_retrieved === 1 ? "" : "s"} returned`];
     if (e.n_blocked) parts.push(`${e.n_blocked} withheld by access rules`);
@@ -55,7 +77,7 @@ export function ActivityTable({ events }: { events: ActivityEvent[] }) {
             <tr key={e.id} className="border-b border-rule align-top last:border-b-0">
               <td className="whitespace-nowrap py-2 pr-4 text-muted">{formatTime(e.ts)}</td>
               <td className="py-2 pr-4 text-ink">{eventLabel(e.event)}</td>
-              <td className="py-2 pr-4 font-mono text-ink">{e.user_id}</td>
+              <td className="py-2 pr-4 font-mono text-ink">{e.user_id === "system" ? "System" : e.user_id}</td>
               <td className="py-2 pr-4 font-mono text-ink">{e.engagement ?? ""}</td>
               <td className="max-w-[14rem] break-all py-2 pr-4 font-mono text-ink">{e.document ?? ""}</td>
               <td className="py-2 text-muted">{eventDetails(e)}</td>

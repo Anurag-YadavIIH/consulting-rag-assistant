@@ -75,6 +75,16 @@ class Settings(BaseSettings):
     # before embedding, so an oversized document costs no embedding time.
     max_upload_chunks: int = 150
 
+    # Team access (auth/access_settings.py, authz/team.py). Comma-separated;
+    # malformed values make the app refuse to start.
+    # Emails that become a global admin at their first verified sign-in.
+    initial_admin_emails: str = ""
+    # When set, only these domains may sign in, plus invited emails and
+    # initial_admin_emails.
+    allowed_email_domains: str = ""
+    # Days an invitation stays usable.
+    invitation_ttl_days: int = 14
+
     @property
     def cors_allowed_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]

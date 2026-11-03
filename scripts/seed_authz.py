@@ -48,6 +48,10 @@ def main(argv=None, repo_factory=AuthzRepository) -> int:
         ap.error("--user-id grants nothing by default: pass --engagement, --admin and/or --clearance")
     if args.clearance is not None and args.clearance < 1:
         ap.error("--clearance must be at least 1")
+    if args.engagement and args.role == "admin":
+        # An engagement membership labelled "admin" would be read as the
+        # global admin role (authz/repository.py). Use --admin for that.
+        ap.error("--role admin isn't allowed with --engagement; use --admin to grant global admin")
 
     repo = repo_factory()
     try:

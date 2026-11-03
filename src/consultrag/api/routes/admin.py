@@ -33,7 +33,7 @@ def _require_admin(user: User = Depends(get_current_app_user)) -> User:
 def activity(
     limit: int = Query(50, ge=1, le=MAX_PAGE),
     before: int | None = Query(None, ge=1),
-    event: Literal["ingest", "delete", "query"] | None = Query(None),
+    event: Literal["ingest", "delete", "query", "access"] | None = Query(None),
     _: User = Depends(_require_admin),
     audit=Depends(get_audit_log),
 ) -> ActivityResponse:

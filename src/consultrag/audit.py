@@ -81,7 +81,7 @@ class AuditLog:
 
 # --- Postgres -------------------------------------------------------------------
 
-AUDIT_EVENT_TYPES = ("ingest", "delete", "query")
+AUDIT_EVENT_TYPES = ("ingest", "delete", "query", "access")
 
 
 def ensure_audit_schema(conn) -> None:
@@ -93,7 +93,7 @@ def ensure_audit_schema(conn) -> None:
             CREATE TABLE IF NOT EXISTS audit_events (
                 id BIGSERIAL PRIMARY KEY,
                 ts TIMESTAMPTZ NOT NULL DEFAULT now(),
-                event TEXT NOT NULL CHECK (event IN ('ingest', 'delete', 'query')),
+                event TEXT NOT NULL,
                 user_id TEXT NOT NULL,
                 engagement TEXT,
                 document TEXT,
@@ -104,6 +104,28 @@ def ensure_audit_schema(conn) -> None:
             )
             """
         )
+        # Access changes (event 'access'): who changed whose access. The
+        # target is a user ID or an invitation ID, never an email. Added in
+        # place so existing tables keep their rows.
+        from .authz.schema import add_column_if_missing
+
+        for column, kind in (("action", "TEXT"), ("target_user_id", "TEXT"),
+                             ("invitation_id", "BIGINT"), ("clearance", "INT")):
+            add_column_if_missing(cur, "audit_events", column, kind)
+        # Widen the event-type check only if it doesn't already allow
+        # 'access' (replacing it keeps every row; ALTER takes an exclusive
+        # lock, so it isn't repeated on every start).
+        cur.execute(
+            "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+            "WHERE conrelid = 'audit_events'::regclass AND conname = 'audit_events_event_check'"
+        )
+        row = cur.fetchone()
+        if row is None or "access" not in row[0]:
+            cur.execute("ALTER TABLE audit_events DROP CONSTRAINT IF EXISTS audit_events_event_check")
+            cur.execute(
+                "ALTER TABLE audit_events ADD CONSTRAINT audit_events_event_check "
+                "CHECK (event IN ('ingest', 'delete', 'query', 'access'))"
+            )
         cur.execute(
             "COMMENT ON TABLE audit_events IS "
             "'Who did what, when. No question text, chunk text, document content or emails.'"
@@ -136,13 +158,19 @@ def insert_audit_event(cur, event: dict) -> None:
         "redaction_counts": Jsonb(event["redaction_counts"]) if event.get("redaction_counts") is not None else None,
         "n_retrieved": event.get("n_retrieved"),
         "n_blocked": event.get("n_blocked"),
+        "action": event.get("action"),
+        "target_user_id": str(event["target_user_id"]) if event.get("target_user_id") is not None else None,
+        "invitation_id": event.get("invitation_id"),
+        "clearance": event.get("clearance"),
     }
     cur.execute(
         """
         INSERT INTO audit_events
-            (event, user_id, engagement, document, n_chunks, redaction_counts, n_retrieved, n_blocked)
+            (event, user_id, engagement, document, n_chunks, redaction_counts, n_retrieved,
+             n_blocked, action, target_user_id, invitation_id, clearance)
         VALUES (%(event)s, %(user_id)s, %(engagement)s, %(document)s, %(n_chunks)s,
-                %(redaction_counts)s, %(n_retrieved)s, %(n_blocked)s)
+                %(redaction_counts)s, %(n_retrieved)s, %(n_blocked)s, %(action)s,
+                %(target_user_id)s, %(invitation_id)s, %(clearance)s)
         """,
         row,
     )
@@ -211,7 +239,8 @@ class PgAuditLog:
             params["event"] = event
         sql = (
             "SELECT id, ts, event, user_id, engagement, document, n_chunks, "
-            "redaction_counts, n_retrieved, n_blocked FROM audit_events "
+            "redaction_counts, n_retrieved, n_blocked, action, target_user_id, "
+            "invitation_id, clearance FROM audit_events "
         )
         if where:
             sql += "WHERE " + " AND ".join(where) + " "

@@ -114,6 +114,12 @@ class ActivityEvent(BaseModel):
     redaction_counts: dict | None = None
     n_retrieved: int | None = None
     n_blocked: int | None = None
+    # Access changes only: what changed, for which user or invitation (IDs,
+    # never emails), and the clearance involved.
+    action: str | None = None
+    target_user_id: str | None = None
+    invitation_id: int | None = None
+    clearance: int | None = None
 
 
 class ActivityResponse(BaseModel):
@@ -132,3 +138,66 @@ class DraftResponse(BaseModel):
     citations: list[CitationResponse]
     mode: str = "extractive"
     quotes: list[QuoteResponse] = []
+
+
+# --- team access (routes/team.py) -------------------------------------------------
+
+TeamRole = Literal["analyst", "manager", "senior_management", "admin"]
+EngagementRole = Literal["analyst", "manager", "senior_management"]
+
+
+class EngagementMembership(BaseModel):
+    engagement: str
+    role: EngagementRole = "analyst"
+
+
+class MemberInfo(BaseModel):
+    user_id: str
+    # Shown to admins on the Team page only; never written to audit_events.
+    email: str
+    clearance: int
+    is_admin: bool
+    engagements: list[EngagementMembership]
+    # A label derived from admin and clearance (analyst, manager,
+    # senior_management, admin or custom); presets grant nothing themselves.
+    preset: str
+    has_access: bool
+
+
+class MembersResponse(BaseModel):
+    members: list[MemberInfo]
+
+
+class MemberUpdate(BaseModel):
+    clearance: int | None = None
+    is_admin: bool | None = None
+    # Replaces the member's engagement memberships when given.
+    engagements: list[EngagementMembership] | None = None
+
+
+class InviteRequest(BaseModel):
+    email: str
+    engagements: list[str] = []
+    role: TeamRole = "analyst"
+    clearance: int = 1
+    is_admin: bool = False
+
+
+class InvitationInfo(BaseModel):
+    id: int
+    email: str
+    engagements: list[str]
+    role: str
+    clearance: int
+    is_admin: bool
+    created_at: str
+    expires_at: str
+
+
+class InvitationsResponse(BaseModel):
+    invitations: list[InvitationInfo]
+
+
+class EngagementsResponse(BaseModel):
+    engagements: list[str]
+

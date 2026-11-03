@@ -127,3 +127,18 @@ it("adminActivity sends limit, the paging cursor and the event filter", async ()
   await adminActivity();
   expect(calls[1].url).toBe("http://localhost:8000/admin/activity?limit=50");
 });
+
+it("access changes read plainly, by user or invitation number, with no emails", () => {
+  expect(eventLabel("access")).toBe("Access change");
+  expect(eventDetails(ev({ event: "access", action: "clearance_changed", target_user_id: "12", clearance: 2,
+                           document: null, n_chunks: null, redaction_counts: null }))).toBe(
+    "Clearance changed for user #12, clearance 2"
+  );
+  expect(eventDetails(ev({ event: "access", action: "invitation_revoked", invitation_id: 4, target_user_id: null,
+                           clearance: null, document: null, n_chunks: null, redaction_counts: null }))).toBe(
+    "Invitation revoked invitation #4"
+  );
+  const out = html(createElement(ActivityTable, { events: [ev({ event: "access", user_id: "system", action: "initial_admin_granted", target_user_id: "90", clearance: 3, document: null })] }));
+  expect(out).toContain("System");
+  expect(out).not.toMatch(/@/);
+});

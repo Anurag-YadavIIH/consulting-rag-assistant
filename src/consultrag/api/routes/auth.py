@@ -25,6 +25,7 @@ from ...auth.app_token import (
     refresh_app_token,
     revoke_with_refresh_token,
 )
+from ...auth.google_login import SignInRefused
 from ...auth.oidc import OIDCError, OIDCVerifier
 from ...authz.repository import AuthzRepository
 from ...config import settings
@@ -78,9 +79,16 @@ def login(
     repo: AuthzRepository = Depends(get_authz_repo),
 ) -> LoginResponse:
     try:
-        pair = login_with_google_id_token(authorization, verifier, repo, settings.app_jwt_secret)
+        pair = login_with_google_id_token(
+            authorization, verifier, repo, settings.app_jwt_secret,
+            initial_admin_emails=settings.initial_admin_emails,
+            allowed_email_domains=settings.allowed_email_domains,
+        )
     except OIDCError as e:
         raise HTTPException(status_code=401, detail=str(e)) from e
+    except SignInRefused:
+        # Generic on purpose: doesn't say which rule or which domains.
+        raise HTTPException(status_code=403, detail="this account isn't allowed to sign in here") from None
     _set_refresh_cookie(response, pair.refresh_token)
     return LoginResponse(access_token=pair.access_token)
 

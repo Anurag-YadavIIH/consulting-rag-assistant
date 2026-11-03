@@ -10,8 +10,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import threading
+
 from ..security.access import User
 from .schema import ensure_authz_schema
+
+_SCHEMA_READY: set[str] = set()
+_SCHEMA_LOCK = threading.Lock()
 
 
 @dataclass
@@ -28,8 +33,25 @@ class AuthzRepository:
 
         from ..config import settings
 
-        self._conn = psycopg.connect(dsn or settings.database_url, autocommit=False)
-        ensure_authz_schema(self._conn)
+        dsn = dsn or settings.database_url
+        self._conn = psycopg.connect(dsn, autocommit=False)
+        # Schema setup once per process and database: the API builds a
+        # repository per request, and repeating DDL would take table locks
+        # on every sign-in and refresh.
+        with _SCHEMA_LOCK:
+            if dsn not in _SCHEMA_READY:
+                ensure_authz_schema(self._conn)
+                # Access changes are audited in the same database (authz/team.py).
+                from ..audit import ensure_audit_schema
+
+                ensure_audit_schema(self._conn)
+                _SCHEMA_READY.add(dsn)
+
+    @property
+    def conn(self):
+        """The repository's connection, for authz/team.py's multi-step
+        transactions (each commits or rolls back as a whole)."""
+        return self._conn
 
     def get_or_create_user(self, google_sub: str, email: str) -> int:
         with self._conn.cursor() as cur:
@@ -51,6 +73,7 @@ class AuthzRepository:
             cur.execute("SELECT clearance, email FROM users WHERE id = %(id)s", {"id": user_id})
             row = cur.fetchone()
             if row is None:
+                self._conn.rollback()
                 raise ValueError(f"no such user_id: {user_id}")
             clearance, email = row
 
@@ -70,6 +93,8 @@ class AuthzRepository:
                 roles.add(role)
                 engagements.append(engagement)
 
+        # End the read transaction so this connection holds no locks.
+        self._conn.commit()
         return AuthzInfo(
             roles=frozenset(roles), engagements=engagements, clearance=clearance, email=email
         )

@@ -85,7 +85,7 @@ export interface DeleteDocumentResponse {
 export interface ActivityEvent {
   id: number;
   ts: string;
-  event: "ingest" | "delete" | "query";
+  event: "ingest" | "delete" | "query" | "access";
   user_id: string;
   engagement: string | null;
   document: string | null;
@@ -93,6 +93,11 @@ export interface ActivityEvent {
   redaction_counts: Record<string, number> | null;
   n_retrieved: number | null;
   n_blocked: number | null;
+  /** Access changes only (IDs, never emails). Optional for older APIs. */
+  action?: string | null;
+  target_user_id?: string | null;
+  invitation_id?: number | null;
+  clearance?: number | null;
 }
 
 export interface ActivityResponse {
@@ -202,6 +207,8 @@ async function request<T>(
     throw new ApiError(res.status, detail);
   }
 
+  // 204 No Content (e.g. revoking an invitation) has no body to parse.
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 
@@ -270,4 +277,78 @@ export function ingest(
     engagement,
     clearance,
   });
+}
+
+// --- team access (admins only; the server checks every call) -----------------------
+
+export type TeamRole = "analyst" | "manager" | "senior_management" | "admin";
+export type EngagementRole = "analyst" | "manager" | "senior_management";
+
+export interface EngagementMembership {
+  engagement: string;
+  role: EngagementRole;
+}
+
+export interface MemberInfo {
+  user_id: string;
+  email: string;
+  clearance: number;
+  is_admin: boolean;
+  engagements: EngagementMembership[];
+  /** analyst, manager, senior_management, admin, or custom. A label only. */
+  preset: string;
+  has_access: boolean;
+}
+
+export interface InvitationInfo {
+  id: number;
+  email: string;
+  engagements: string[];
+  role: string;
+  clearance: number;
+  is_admin: boolean;
+  created_at: string;
+  expires_at: string;
+}
+
+export interface InviteRequest {
+  email: string;
+  engagements: string[];
+  role: TeamRole;
+  clearance: number;
+  is_admin: boolean;
+}
+
+export interface MemberUpdate {
+  clearance?: number;
+  is_admin?: boolean;
+  engagements?: EngagementMembership[];
+}
+
+export function listMembers(): Promise<{ members: MemberInfo[] }> {
+  return request("GET", "/admin/members");
+}
+
+export function updateMember(userId: string, update: MemberUpdate): Promise<{ members: MemberInfo[] }> {
+  return request("PATCH", `/admin/members/${encodeURIComponent(userId)}`, update);
+}
+
+export function removeMember(userId: string): Promise<{ members: MemberInfo[] }> {
+  return request("DELETE", `/admin/members/${encodeURIComponent(userId)}`);
+}
+
+export function listInvitations(): Promise<{ invitations: InvitationInfo[] }> {
+  return request("GET", "/admin/invitations");
+}
+
+export function createInvitation(invite: InviteRequest): Promise<InvitationInfo> {
+  return request("POST", "/admin/invitations", invite);
+}
+
+export function revokeInvitation(id: number): Promise<void> {
+  return request("DELETE", `/admin/invitations/${id}`);
+}
+
+export function listEngagements(): Promise<{ engagements: string[] }> {
+  return request("GET", "/admin/engagements");
 }

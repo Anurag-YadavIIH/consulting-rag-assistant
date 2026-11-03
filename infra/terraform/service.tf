@@ -81,6 +81,10 @@ resource "aws_ecs_task_definition" "api" {
       { name = "APP_ENV", value = "production" },
       { name = "DEV_AUTH_BYPASS", value = "false" },
       { name = "OAUTH_AUDIENCE", value = var.oauth_audience },
+      # Team access (authz/team.py). Malformed values stop the API starting.
+      { name = "INITIAL_ADMIN_EMAILS", value = join(",", var.initial_admin_emails) },
+      { name = "ALLOWED_EMAIL_DOMAINS", value = join(",", var.allowed_email_domains) },
+      { name = "INVITATION_TTL_DAYS", value = tostring(var.invitation_ttl_days) },
     ]
     secrets = [
       { name = "DATABASE_URL", valueFrom = aws_secretsmanager_secret.database_url.arn },

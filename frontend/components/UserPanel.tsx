@@ -1,4 +1,5 @@
 import type { MeResponse } from "../lib/api";
+import { roleLabel } from "../lib/team";
 import { Badge } from "./ui/Badge";
 import { Button } from "./ui/Button";
 
@@ -25,11 +26,11 @@ export function UserPanel({
           User # <span className="font-mono">{meInfo.user_id}</span>
         </span>
         <span aria-hidden="true">·</span>
-        <span>Clearance {meInfo.clearance}</span>
-        {meInfo.is_admin ? (
-          <Badge tone={dark ? "sidebar" : "neutral"}>
-            {meInfo.engagements.length === 0 ? "Admin, all engagements" : "Admin"}
-          </Badge>
+        <span>
+          {roleLabel(meInfo.is_admin, meInfo.clearance)}, clearance {meInfo.clearance}
+        </span>
+        {meInfo.is_admin && meInfo.engagements.length === 0 ? (
+          <Badge tone={dark ? "sidebar" : "neutral"}>All engagements</Badge>
         ) : null}
       </p>
       {onSignOut ? (
