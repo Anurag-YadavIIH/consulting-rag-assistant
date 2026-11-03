@@ -28,7 +28,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from ...auth.dev_bypass import is_dev_auth_bypass_permitted
 from ...config import settings
 from ...ingestion.loaders import PdfLoader, PptxLoader, TextLoader
-from ...pipeline import DocumentLoadError, IngestionPipeline
+from ...pipeline import DocumentLoadError, DocumentTooLarge, IngestionPipeline
 from ...rag import RAGEngine
 from ...security.access import AccessPolicy, User
 from ...vectorstore import DocumentReplaceForbidden
@@ -154,6 +154,7 @@ def ingest_upload(
                 user_id=user.user_id,
                 source_name=name,
                 replace_max_clearance=None if AccessPolicy.is_admin(user) else user.clearance,
+                max_chunks=settings.max_upload_chunks,
             )
         except DocumentReplaceForbidden:
             # Deliberately says nothing about the existing document's
@@ -162,6 +163,16 @@ def ingest_upload(
                 status_code=409,
                 detail="a document with this name already exists in this engagement "
                        "and you are not permitted to replace it",
+            ) from None
+        except DocumentTooLarge as e:
+            # The limit only; never the document's text or its chunk count.
+            raise HTTPException(
+                status_code=413,
+                # ~250 words per chunk: 350-token windows overlap by 50, and
+                # the token count includes punctuation.
+                detail=f"the document has too much text to process: the limit is "
+                       f"{e.max_chunks} chunks (roughly {e.max_chunks * 250:,} words). "
+                       f"Split it into smaller files and upload them separately.",
             ) from None
         except DocumentLoadError as e:
             logger.info("upload could not be read (%s): %s", suffix, e)

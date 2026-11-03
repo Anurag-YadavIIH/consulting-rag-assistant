@@ -7,7 +7,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, expect, it, vi } from "vitest";
-import { ServerError } from "../lib/api";
+import { ApiError, ServerError } from "../lib/api";
 import { resolveApiBaseUrl } from "../lib/config";
 import { ErrorBanner } from "../components/ErrorBanner";
 
@@ -57,4 +57,13 @@ it("a 504 (CloudFront timeout) explains the upload may still finish", () => {
 it("other 5xx errors keep the generic message", () => {
   const html = renderToStaticMarkup(createElement(ErrorBanner, { error: new ServerError(502, "bad") }));
   expect(html).toContain("Something went wrong on the server");
+});
+
+it("the too-much-text 413 is shown to the user as the API wrote it", () => {
+  const detail =
+    "the document has too much text to process: the limit is 150 chunks (roughly 37,500 words). " +
+    "Split it into smaller files and upload them separately.";
+  const html = renderToStaticMarkup(createElement(ErrorBanner, { error: new ApiError(413, detail) }));
+  expect(html).toContain("too much text to process");
+  expect(html).toContain("150 chunks");
 });

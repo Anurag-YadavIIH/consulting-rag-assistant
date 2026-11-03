@@ -28,6 +28,16 @@ class DocumentLoadError(ValueError):
     unsupported extension). Subclasses ValueError, which load() raised before."""
 
 
+class DocumentTooLarge(ValueError):
+    """The document's extracted text would make more chunks than allowed.
+    Raised before anything is embedded or stored."""
+
+    def __init__(self, n_chunks: int, max_chunks: int):
+        super().__init__(f"{n_chunks} chunks exceeds the limit of {max_chunks}")
+        self.n_chunks = n_chunks
+        self.max_chunks = max_chunks
+
+
 class IngestionPipeline:
     def __init__(
         self,
@@ -51,7 +61,8 @@ class IngestionPipeline:
                     clearance: int = 1,
                     user_id: str = "system",
                     source_name: str | None = None,
-                    replace_max_clearance: int | None = None) -> int:
+                    replace_max_clearance: int | None = None,
+                    max_chunks: int | None = None) -> int:
         """Ingest a file or directory.
 
         With `source_name` (used by uploads), `path` is a single temporary
@@ -60,7 +71,12 @@ class IngestionPipeline:
         document REPLACES any existing document of that name in `engagement`
         atomically (see the store's replace_document). Existing chunks above
         `replace_max_clearance` block the replacement with
-        DocumentReplaceForbidden; None means no limit (admins)."""
+        DocumentReplaceForbidden; None means no limit (admins).
+
+        `max_chunks` caps the extracted text: a document that would make more
+        chunks raises DocumentTooLarge after loading, redaction and chunking
+        but BEFORE embedding, so it costs no embedding time and leaves any
+        existing document untouched. None means no limit."""
         path = Path(path)
         if source_name is not None and not engagement:
             raise ValueError("source_name requires an engagement")
@@ -88,6 +104,8 @@ class IngestionPipeline:
         chunks = self.chunker.chunk_sections(sections)
         if not chunks:
             return 0
+        if max_chunks is not None and len(chunks) > max_chunks:
+            raise DocumentTooLarge(len(chunks), max_chunks)
 
         # Attach access-control + caller metadata.
         for c in chunks:

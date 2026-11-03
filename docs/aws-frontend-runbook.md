@@ -228,7 +228,8 @@ curl.exe -s -m 10 -o NUL -w "[%{http_code}]" "http://$alb/health"
 | B5 | Ask "What is the TAM for ambulatory neurosurgery?" | First source `deck.pptx`, slide 1 |
 | B6 | Console during B1, B4 and B5 | Note every `[Report Only]` Content-Security-Policy message. None is the goal; any listed message needs a policy change before enforcing. |
 | B7 | Sign out, then reload | Back to the sign-in screen and stays there |
-| B8 | Large upload: a real, text-heavy PDF of about 60 to 150 pages, under 25 MB | Record the time from the Network tab. Under about 60 s: success. Over 60 s: CloudFront returns `504` and the app shows "The server took too long to respond...". Then wait a minute and ask about the document, to see whether it finished in the background. |
+| B8a | Large upload within the text limit: a real, text-heavy PDF of about 40 to 60 pages (under roughly 37,500 words) | Record the time from the Network tab's Time column. Expect success in under 60 s. If it takes longer, CloudFront returns `504` and the app shows "The server took too long to respond..."; wait a minute and ask about the document to see whether it finished in the background, and record it. |
+| B8b | Over the text limit: a long, text-heavy PDF (for example 150+ pages, under 25 MB) | A `413` within a few seconds and the app shows "the document has too much text to process: the limit is 150 chunks (roughly 37,500 words)...". Nothing new is cited afterwards. |
 
 ### Enforcing the CSP (a later step)
 

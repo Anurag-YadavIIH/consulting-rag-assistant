@@ -8,7 +8,7 @@ locals {
   # Every route the FastAPI app serves (src/consultrag/api/main.py and
   # routes/). FastAPI's /docs, /redoc and /openapi.json are deliberately NOT
   # listed, so they aren't reachable through CloudFront.
-  # tests/test_cloudfront_routes.py checks this list against the real app.
+  # tests/test_terraform_hosting.py checks this list against the real app.
   api_path_patterns = [
     "/auth/*",
     "/me",

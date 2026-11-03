@@ -40,7 +40,8 @@ export function IngestPanel({ engagement }: { engagement: string | undefined }) 
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
         />
         <p className="text-xs text-slate-400 mt-1">
-          .txt, .md, .pdf or .pptx, up to 25 MB by default. The file is
+          .txt, .md, .pdf or .pptx, up to 25 MB and roughly 37,500 words of
+          text by default (longer documents are refused; split them). The file is
           redacted on the server before anything is stored. Its filename is
           stored as-is and shown in citations, so keep sensitive details out
           of it. Uploading a name that already exists in this engagement

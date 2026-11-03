@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     # whole request still reaches the app before this check runs; a hard cap
     # on request size belongs at the proxy/load balancer.
     max_upload_mb: int = 25
+    # Cap on an upload's extracted text, in chunks (about 350 tokens each).
+    # Embedding ran at about 3 chunks a second on one vCPU, so 150 chunks fit
+    # well inside CloudFront's 60 second origin timeout on AWS. Checked
+    # before embedding, so an oversized document costs no embedding time.
+    max_upload_chunks: int = 150
 
     @property
     def cors_allowed_origins_list(self) -> list[str]:

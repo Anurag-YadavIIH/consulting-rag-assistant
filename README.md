@@ -310,6 +310,14 @@ curl.exe -F "file=@data/sample/acme_research.txt" -F "engagement=acme" -F "clear
 - **File types:** `.txt`, `.md`, `.pdf` and `.pptx`, taken from the loaders.
   Audio isn't accepted through upload yet. Anything else returns `415`.
 - **Size limit:** `MAX_UPLOAD_MB`, default 25. Larger files return `413`.
+- **Text limit:** `MAX_UPLOAD_CHUNKS`, default 150 chunks (roughly 37,500
+  words). A document whose extracted text would make more chunks returns
+  `413` ("the document has too much text to process", with the limit and
+  never the document's contents). It's checked after loading, redaction and
+  chunking but before embedding, so a refused document costs no embedding
+  time and leaves any existing document of that name unchanged. The default
+  comes from a local benchmark of about 3 chunks a second on one CPU, which
+  keeps processing well inside the planned 60 second CloudFront timeout.
 - **Other errors:** an empty file returns `400`. A file that can't be parsed,
   or has no extractable text, returns `422`.
 - **Citations** show the original filename, such as `acme_research.txt`. The

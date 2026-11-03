@@ -756,8 +756,88 @@ def test_upload_oversized_file_is_413(client, sample_store, monkeypatch, upload_
 
 def test_upload_exactly_at_limit_is_accepted(client, monkeypatch):
     monkeypatch.setattr(settings, "max_upload_mb", 1)
+    # This is about the byte limit: 1 MB of text is far over the chunk cap.
+    monkeypatch.setattr(settings, "max_upload_chunks", 100_000)
     resp = _upload(client, _acme_user(), "edge.txt", b"word. " * (1024 * 1024 // 6))
     assert resp.status_code == 200
+
+
+# --- extracted-text cap (MAX_UPLOAD_CHUNKS) -----------------------------------
+
+
+def _chunk_count(text: str) -> int:
+    from consultrag.chunking import Chunker
+    from consultrag.ingestion.loaders import RawSection
+
+    return len(Chunker().chunk_sections([RawSection(source_path="x.txt", locator="", text=text)]))
+
+
+def _long_text(paragraphs: int) -> str:
+    return "\n\n".join(
+        f"Paragraph {i} about acme reimbursement pricing and adoption. " * 40 for i in range(paragraphs)
+    )
+
+
+def _count_embed_calls(pipeline, monkeypatch) -> list[int]:
+    calls: list[int] = []
+    real = pipeline.embedder.embed
+
+    def spy(texts):
+        calls.append(len(texts))
+        return real(texts)
+
+    monkeypatch.setattr(pipeline.embedder, "embed", spy)
+    return calls
+
+
+def test_upload_at_the_chunk_limit_is_accepted(client, sample_store, monkeypatch):
+    _, store, _, pipeline = sample_store
+    text = _long_text(6)
+    n = _chunk_count(text)
+    assert n > 2
+    monkeypatch.setattr(settings, "max_upload_chunks", n)
+    resp = _upload(client, _acme_user(), "at_limit.txt", text.encode())
+    assert resp.status_code == 200
+    assert resp.json()["chunks_ingested"] == n
+    assert len(_doc_chunks(store, "acme", "at_limit.txt")) == n
+
+
+def test_upload_over_the_chunk_limit_is_413_without_embedding(client, sample_store, monkeypatch, upload_tmp):
+    _, store, _, pipeline = sample_store
+    text = _long_text(6) + "\n\nSECRET_BODY_TOKEN appears only in the document text."
+    n = _chunk_count(text)
+    monkeypatch.setattr(settings, "max_upload_chunks", n - 1)
+    embed_calls = _count_embed_calls(pipeline, monkeypatch)
+
+    resp = _upload(client, _acme_user(), "too_long.txt", text.encode())
+
+    assert resp.status_code == 413
+    detail = resp.json()["detail"]
+    assert "too much text" in detail and f"{n - 1} chunks" in detail
+    assert "SECRET_BODY_TOKEN" not in detail and "Paragraph" not in detail
+    assert str(n) not in detail.replace(f"{n - 1}", "")  # the limit, not the document's count
+    assert embed_calls == []  # rejected before any embedding
+    assert _doc_chunks(store, "acme", "too_long.txt") == []
+    assert list(upload_tmp.iterdir()) == []
+
+
+def test_upload_over_the_chunk_limit_keeps_the_old_version(client, sample_store, monkeypatch):
+    _, store, _, _ = sample_store
+    first = _upload(client, _acme_user(), "report.txt", b"The OLD_VERSION_TOKEN short report.")
+    assert first.status_code == 200
+    before = [(c.chunk_id, c.text) for c in _doc_chunks(store, "acme", "report.txt")]
+
+    monkeypatch.setattr(settings, "max_upload_chunks", 2)
+    resp = _upload(client, _acme_user(), "report.txt", _long_text(6).encode())
+
+    assert resp.status_code == 413
+    assert [(c.chunk_id, c.text) for c in _doc_chunks(store, "acme", "report.txt")] == before
+
+
+def test_chunk_limit_defaults_to_150():
+    from consultrag.config import Settings
+
+    assert Settings().max_upload_chunks == 150
 
 
 def test_upload_empty_file_is_400(client):
