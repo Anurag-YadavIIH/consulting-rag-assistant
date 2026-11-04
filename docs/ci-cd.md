@@ -2,7 +2,7 @@
 
 ConsultRAG has continuous integration (CI) with GitHub Actions in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml). There is **no automated deployment (CD) yet**: nothing in the workflow deploys to AWS, calls an AWS API or holds AWS credentials. Deployment is still the manual process in [aws-frontend-runbook.md](aws-frontend-runbook.md).
 
-**Status:** every job's checks pass when run locally. The first run on GitHub is still pending, and this page will be updated with its results.
+**Status:** all six jobs passed on the first GitHub run (4 November 2026, pull request #2): Backend tests ran 373 tests with 0 skipped against the Postgres service container, the Frontend job ran 208 tests plus the type check and static build, `terraform test` passed 13 runs with no credentials, the Docker image built without being pushed, and gitleaks found no leaks.
 
 ## When it runs
 
