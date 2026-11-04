@@ -1,12 +1,23 @@
-# ConsultRAG — Architecture
+# ConsultRAG: Architecture
 
-**Status:** design baseline · **Last updated:** June 2026
-**Owner:** [your name] · **Audience:** engineers and technical reviewers
+**Status:** design baseline from June 2026, kept as written · **Owner:** Anurag Yadav · **Audience:** engineers and technical reviewers
+
+> **What was built (November 2026).** This document is the original design.
+> Built: internal recall (hybrid dense and BM25 retrieval with an optional
+> reranker), PII/PHI redaction before storage, engagement and clearance
+> access control in the database and in process, an audit log, the FastAPI
+> service with Google sign-in, the Next.js frontend with team access, optional
+> Langfuse tracing, a one-off AWS deployment (ECS Fargate, RDS with pgvector,
+> CloudFront and S3, shut down on 4 November 2026) and CI on GitHub Actions.
+> Not built: the live web layer (§8), generation evaluation such as RAGAS (§9;
+> only retrieval metrics exist), a language model in the deployed app (it
+> returns extractive answers), and automated deployment. See the README's
+> [Status](README.md#status) and [docs/aws-evidence.md](docs/aws-evidence.md).
 
 A retrieval platform that lets analysts at a small healthcare / life-sciences
 consulting firm ask questions across their own engagement material *and* the
-current external market, and get answers that are grounded, **cited, and dated**
-— without confidential client or patient data leaking between engagements or out
+current external market, and get answers that are grounded, **cited, and dated**,
+without confidential client or patient data leaking between engagements or out
 to third parties.
 
 ---
@@ -18,17 +29,17 @@ reconstruct what is already known about a market, and an LLM alone can't help
 because its knowledge is frozen at training time while consulting value is being
 *current*. ConsultRAG addresses both halves:
 
-- **Internal recall** — semantic + keyword search over the firm's proprietary
+- **Internal recall**: semantic + keyword search over the firm's proprietary
   research (slide decks, PDFs, market/secondary research, recorded client
   meetings), with answers traceable to the exact slide, page, or timestamp.
-- **External freshness** — a live-data layer that pulls current market, company,
+- **External freshness**: a live-data layer that pulls current market, company,
   and regulatory information from the web at query time, merged with internal
   results and clearly distinguished by recency.
 
 **In scope (v1):** a deployable, multi-tenant service for a single small firm,
 with the governance a healthcare-adjacent setting requires.
 **Out of scope (v1):** agentic multi-hop research, knowledge graphs, and model
-fine-tuning — see §13. These are deliberate roadmap items, not omissions.
+fine-tuning; see §13. These are deliberate roadmap items, not omissions.
 
 ## 2. Design principles
 
@@ -143,7 +154,7 @@ runs on internal results before they ever reach the LLM.
 | Sensitive data sent to third-party models | Local-first defaults; redaction guards any hosted-model path; web search is over public data only. |
 
 Data-retention note: free-tier search/LLM providers may train on inputs, so real
-client material is never sent to them — only sanitized, public-web queries go
+client material is never sent to them: only sanitized, public-web queries go
 out. Internal confidential text stays on local embeddings/store by default.
 
 ## 7. Retrieval design rationale
@@ -152,7 +163,7 @@ out. Internal confidential text stays on local embeddings/store by default.
   device models, billing codes, company names) that consulting queries hinge on;
   BM25 recovers them. Fused with RRF for a single ranked list.
 - **Reranking:** a cross-encoder rescoring ~20 candidates to the best 5 is the
-  highest-ROI quality lever; it judges query–passage relevance directly rather
+  highest-ROI quality lever; it judges query-passage relevance directly rather
   than via independent embeddings.
 - **Contextual chunking:** prepending a short "where this sits" line per chunk
   before embedding measurably improves retrieval of passages that are ambiguous
@@ -160,11 +171,11 @@ out. Internal confidential text stays on local embeddings/store by default.
 - **pgvector/Postgres (opt-in via `--store pgvector`):** appropriate for a small
   firm's corpus (well under the multi-million-vector range where approximate
   indexes like FAISS/Qdrant earn their keep), runs in one container, and lets
-  access control be a SQL `WHERE` — applied as defense-in-depth *alongside*,
+  access control be a SQL `WHERE`, applied as defense-in-depth *alongside*,
   not instead of, the in-process `AccessPolicy` check that runs for every
   backend. The local NumPy store remains the default for zero-infra demos and
   development.
-- **Chunking params:** ~350-token windows, ~50-token overlap, sentence-aware —
+- **Chunking params:** ~350-token windows, ~50-token overlap, sentence-aware:
   balances retrieval precision against fragmenting context.
 
 ## 8. Freshness / live-data design
@@ -189,30 +200,30 @@ deployments.
 
 ## 9. Evaluation strategy
 
-- A hand-labeled golden set of 50–100 question/answer pairs covering real use
+- A hand-labeled golden set of 50 to 100 question/answer pairs covering real use
   cases, version-controlled in `eval/`.
 - Retrieval: hit@k, recall@k, MRR.
 - Generation: RAGAS-style faithfulness and answer relevancy via an LLM judge.
 - Operating rule: if faithfulness drops below ~0.9, fix retrieval before
-  touching generation — most "hallucination" is actually wrong-context retrieval.
+  touching generation: most "hallucination" is actually wrong-context retrieval.
 - Evaluation runs on every pipeline change; numbers are reported in the README.
 
 ## 10. Observability
 
 Every query emits a Langfuse trace: the question, retrieved chunk ids and scores,
 which retrieval paths ran, latency, and token/cost. This makes "why did it answer
-that?" answerable on demand — a requirement for a system clients rely on.
+that?" answerable on demand: a requirement for a system clients rely on.
 
 ## 11. Deployment
 
 - **Compose stack:** `postgres` (pgvector) today; `api` (FastAPI) is roadmap
   (§13/§14). Langfuse tracing targets Langfuse Cloud's free tier by default
-  (two API keys, no extra container) — self-hosting Langfuse's own stack
+  (two API keys, no extra container): self-hosting Langfuse's own stack
   (Postgres + ClickHouse + Redis/blob storage) is documented as a swap via
   `LANGFUSE_HOST` for teams that need data to stay fully on-prem, but isn't a
   default compose service given its footprint relative to this project's size.
-  Models are *not* containerized — embeddings/LLM are API-based or run on the
-  host — keeping image sizes small.
+  Models are *not* containerized (embeddings/LLM are API-based or run on the
+  host), keeping image sizes small.
 - **Secrets:** `.env` (gitignored) supplies OpenAI, Groq, Tavily, OAuth, and DB
   settings via a typed config module.
 - **Dev environment:** Windows + Docker Desktop + VS Code; `docker compose up -d`
@@ -228,9 +239,9 @@ that?" answerable on demand — a requirement for a system clients rely on.
 | Sparse retrieval | BM25 (RRF fusion) | Recovers exact-term matches | Postgres full-text search |
 | Reranker | cross-encoder `bge-reranker` | Local, no extra key | Hosted rerank API |
 | Live search | Tavily | LLM-native, dated, free tier | Exa, Brave (privacy) |
-| Auth | OAuth2 / JWT (JWKS) | Standard, provider-agnostic | — |
+| Auth | OAuth2 / JWT (JWKS) | Standard, provider-agnostic | n/a |
 | Observability | Langfuse | Open-source, self-hostable | LangSmith |
-| Eval | RAGAS-style + custom | Faithfulness + retrieval metrics | — |
+| Eval | RAGAS-style + custom | Faithfulness + retrieval metrics | n/a |
 
 ## 13. Roadmap (deliberately out of v1)
 

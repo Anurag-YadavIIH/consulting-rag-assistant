@@ -1,6 +1,6 @@
 # Runbook: rebuild ConsultRAG on AWS with the frontend
 
-**Status: planned and untested on AWS.** The Terraform passes `terraform fmt` and `terraform validate`, and the API checks below were trialled against the API running locally in Docker Compose. Nothing here has been applied to AWS yet. Update this file with real results after the first run.
+**Status:** used for the 4 November 2026 deployment of commit `77e1695`, which was then shut down to control cost. The results that were checked are recorded in [aws-evidence.md](aws-evidence.md). This runbook has not been re-run since, and the commits added to `main` afterwards (CI and a Linux path fix) have not been deployed with it.
 
 Everything runs from Windows PowerShell in the repository root, with AWS CLI v2, Terraform, Docker Desktop and Node.js installed, and an AWS profile named `consultrag`. Each `terraform apply` creates billable resources.
 
@@ -179,7 +179,7 @@ Record the result of each one.
 
 ### API, from PowerShell
 
-These commands were trialled against the API in local Docker Compose; the expected results through CloudFront are untested.
+These commands were first trialled against the API in local Docker Compose. Through CloudFront on 4 November 2026, `GET /health` returned `200` and `GET /me` without a token returned a JSON `401` ([aws-evidence.md](aws-evidence.md)); the other checks here were not recorded.
 
 ```powershell
 $u = terraform -chdir=infra\terraform output -raw cloudfront_url

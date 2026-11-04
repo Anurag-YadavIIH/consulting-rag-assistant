@@ -2,7 +2,7 @@
 
 I deployed ConsultRAG's FastAPI backend to AWS on 2 November 2026 to learn how a containerised ML service runs in the cloud. The whole environment is defined in Terraform, so I can build it, test it and destroy it to control cost.
 
-**Status:** the API and database ran successfully on AWS. It is not a public demo yet: there is no frontend, HTTPS or browser sign-in on AWS, and access was limited to my own IP address. I shut it down after testing, so there is no live URL. Hosting the frontend on S3 and CloudFront, with browser sign-in on one HTTPS URL, is written in Terraform but not yet applied or tested (see "Planned: frontend on S3 and CloudFront").
+**Status:** this page records the first, API-only deployment on 2 November 2026, when access was limited to my own IP address. On 4 November 2026 I deployed the full system (the frontend on S3 and CloudFront, HTTPS, Google sign-in, uploads and queries) from commit `77e1695` and tested it; that deployment is recorded in [aws-evidence.md](aws-evidence.md). Both environments were shut down to control cost, the second on 4 November 2026, so there is no live URL.
 
 ## Architecture
 
@@ -43,7 +43,7 @@ My IP only ── HTTP ──▶ Application Load Balancer (public subnets, 2 av
 | `GET /me` with no token | `401 Unauthorized`, `{"detail":"missing Authorization header"}` |
 | Ship a code change with an ECS rolling deployment | New image pushed to ECR, and `/health` then returned `{"status":"ok","version":"0.2.0"}` |
 
-**Not tested on AWS yet:** ingesting documents, answering queries, and Google sign-in.
+**Not tested in this first deployment:** ingesting documents, answering queries, and Google sign-in. All three were tested in the 4 November deployment; see [aws-evidence.md](aws-evidence.md).
 
 ## Problems worth a closer look
 
@@ -57,19 +57,19 @@ My IP only ── HTTP ──▶ Application Load Balancer (public subnets, 2 av
 
 I estimate about $0.10 to $0.13 an hour while running. I used AWS credits and ran `terraform destroy` after testing.
 
-## Current limitations
+## Limitations of this first deployment
 
-- No frontend, HTTPS or browser sign-in on AWS yet. Google sign-in works in the frontend locally (Docker Compose and the static export on `http://localhost:3000`). Hosting the frontend on S3 and CloudFront is written in Terraform but **not applied or tested on AWS**; see "Planned: frontend on S3 and CloudFront" below.
-- Document upload (`POST /ingest/upload`) works with Docker Compose locally but hasn't been deployed or tested on AWS. The path-based `/ingest` returns 404 unless `APP_ENV` is `development` or `dev`.
+- No frontend, HTTPS or browser sign-in in this first deployment; the 4 November deployment added them ([aws-evidence.md](aws-evidence.md)). Google sign-in works in the frontend locally (Docker Compose and the static export on `http://localhost:3000`). Hosting the frontend on S3 and CloudFront is written in Terraform but **not applied or tested on AWS**; see "Planned: frontend on S3 and CloudFront" below.
+- Document upload (`POST /ingest/upload`) was not part of this first deployment; uploads were tested on AWS on 4 November. The path-based `/ingest` returns 404 unless `APP_ENV` is `development` or `dev`.
 - After an upload, only the API process that handled it refreshes its in-memory keyword (BM25) index. Other processes find new documents through vector search only until they restart. This deployment runs one task, but running more than one needs a shared fix first, such as keyword search in Postgres or a refresh signal between tasks.
 - FastAPI receives a whole upload before checking its size, so an oversized file still arrives before the 413 is returned.
-- Terraform state is stored on my laptop, and deployments are manual, with no CI/CD yet.
+- Terraform state is stored on my laptop, and deployments are manual. CI now runs on GitHub Actions ([ci-cd.md](ci-cd.md)), but automated deployment (CD) is not built.
 - The database is a single instance with no backups, because this is a learning environment holding no real data.
 - This setup is not reviewed for real client or patient data.
 
-## Planned: frontend on S3 and CloudFront (untested on AWS)
+## Frontend on S3 and CloudFront (deployed 4 November 2026)
 
-**Status:** the Terraform in `infra/terraform/frontend.tf` (with changes to `network.tf`, `service.tf`, `variables.tf` and `outputs.tf`) passes `terraform fmt` and `terraform validate`. It has not been planned or applied. The step-by-step rebuild, including the post-deploy checks, is in [aws-frontend-runbook.md](aws-frontend-runbook.md).
+**Status:** the Terraform in `infra/terraform/frontend.tf` (with changes to `network.tf`, `service.tf`, `variables.tf` and `outputs.tf`) passes `terraform fmt` and `terraform validate`, and CI now plans it with mocked providers in `terraform test`. It was applied on 4 November 2026 and destroyed the same day; the results are in [aws-evidence.md](aws-evidence.md). The step-by-step rebuild, including the post-deploy checks, is in [aws-frontend-runbook.md](aws-frontend-runbook.md).
 
 ```text
 Browser ── HTTPS ──▶ CloudFront (default *.cloudfront.net domain, PriceClass_200)
@@ -108,7 +108,7 @@ Known limitations of this design:
 
 Requires AWS CLI v2, Terraform, Docker and an AWS profile named `consultrag`. Commands are for Windows PowerShell. Running this creates billable resources.
 
-With the planned frontend hosting, follow [aws-frontend-runbook.md](aws-frontend-runbook.md) instead: it covers the whole order from credits to destroy. The steps below are the original API-only rebuild.
+With the frontend hosting, follow [aws-frontend-runbook.md](aws-frontend-runbook.md) instead: it covers the whole order from credits to destroy. The steps below are the original API-only rebuild.
 
 ```powershell
 cd infra\terraform

@@ -37,7 +37,9 @@ flowchart LR
 | Frontend | Built from `77e1695` | The JavaScript served at the time contained text added in `77e1695` (the sign-in "how it works" panel and labelled redaction bars) and not the change in the later commit `33163db`. `index.html` in S3 was last modified 2026-11-04T09:07:47Z. |
 | API image | `sha256:cfa75bf884a8b55955c0558b313509a14e15fc50ed4aa1ef0b0384cba3badcae`, tag `latest`, pushed 2026-11-04T08:52:19Z | ECR `describe-images`; the running task reports the same digest. **Inferred, not proven:** the image has no git label, but it was pushed after `77e1695`, and no API code changed between `77e1695` and the next commit. |
 
-The fix for an admin engagement-selector bug found while the site was running is on the branch `fix/admin-engagement-selector` (`33163db`). It was **not** deployed during this snapshot.
+The fix for an admin engagement-selector bug found while the site was running is on the branch `fix/admin-engagement-selector` (`33163db`). It was **not** deployed during this snapshot and has not been merged into `main`.
+
+**Changes on `main` since this snapshot (not deployed, not tested on AWS):** a CI pipeline on GitHub Actions and a fix that normalises Windows-style source paths the same way on Linux. They are covered by CI ([docs/ci-cd.md](ci-cd.md), [latest run on `main`](https://github.com/Anurag-YadavIIH/consulting-rag-assistant/actions/runs/41832856151)), not by this report.
 
 ## What was verified, by whom and how
 
