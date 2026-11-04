@@ -10,7 +10,7 @@ ConsultRAG has continuous integration (CI) with GitHub Actions in [`.github/work
 | [41832382450](https://github.com/Anurag-YadavIIH/consulting-rag-assistant/actions/runs/41832382450) | pull request #2, second run | all six jobs passed; npm and Docker caches restored |
 | [41832856151](https://github.com/Anurag-YadavIIH/consulting-rag-assistant/actions/runs/41832856151) | push to `main` after merging #2 | all six jobs passed |
 
-The pip cache missed on all three runs: the first saved it under Python 3.11.17, the runner then moved to 3.11.18, and caches saved by pull-request runs can't be read by `main`. Later runs should hit it.
+The pip cache has missed on every run so far. `actions/setup-python` puts the Python patch version in the cache key, and GitHub's Ubuntu runners have been a mix of images with Python 3.11.17 and 3.11.18, so a run often lands on the other version from the one that saved the cache. Caches saved by pull-request runs also can't be read by `main`. The npm and Docker caches don't depend on this and are restored. A pip cache key without the patch version would fix it; that isn't built.
 
 ## When it runs
 
