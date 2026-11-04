@@ -1,5 +1,7 @@
 # ConsultRAG — a security-first knowledge assistant for consulting teams
 
+[![CI](https://github.com/Anurag-YadavIIH/consulting-rag-assistant/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Anurag-YadavIIH/consulting-rag-assistant/actions/workflows/ci.yml)
+
 **Repo:** [github.com/Anurag-YadavIIH/consulting-rag-assistant](https://github.com/Anurag-YadavIIH/consulting-rag-assistant)
 
 A retrieval-augmented generation (RAG) system that lets analysts and consultants
