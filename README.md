@@ -1,12 +1,12 @@
-# ConsultRAG — a security-first knowledge assistant for consulting teams
+# ConsultRAG: a security-first knowledge assistant for consulting teams
 
 [![CI](https://github.com/Anurag-YadavIIH/consulting-rag-assistant/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Anurag-YadavIIH/consulting-rag-assistant/actions/workflows/ci.yml)
 
 **Repo:** [github.com/Anurag-YadavIIH/consulting-rag-assistant](https://github.com/Anurag-YadavIIH/consulting-rag-assistant)
 
 A retrieval-augmented generation (RAG) system that lets analysts and consultants
-ask questions across their own research material — client slide decks, market and
-secondary research, PDFs, and recorded client meetings — and get grounded,
+ask questions across their own research material (client slide decks, market and
+secondary research, PDFs, and recorded client meetings) and get grounded,
 **cited** answers, without confidential client or patient data ever leaving the
 machine or leaking between engagements.
 
@@ -16,14 +16,34 @@ to any third-party API unless you explicitly wire one in.
 
 > Why this exists: while interning as an analyst I watched a lot of time go into
 > re-reading old decks, transcripts, and research to reconstruct what was already
-> known about a market. This is a working prototype of the tool I wished existed —
+> known about a market. This is a working prototype of the tool I wished existed,
 > with the confidentiality controls a consulting/healthcare setting actually needs.
+
+## Status
+
+**Complete as a portfolio project.** The AWS demo was shut down on 4 November 2026 to control cost, so there is no live URL.
+
+- **Deployed and tested on AWS:** commit `77e1695`, on 4 November 2026. The evidence (read-only AWS checks, live requests, my manual browser tests and masked screenshots) is in [docs/aws-evidence.md](docs/aws-evidence.md).
+- **Added to `main` since, not deployed:** the CI pipeline and a fix that normalises Windows-style source paths the same way on Linux. They are tested in CI only, not on AWS.
+- **CI:** every pull request and every push to `main` runs the backend tests (373 tests, 0 skipped, against a Postgres container), the frontend tests and static build (208 tests), Terraform checks with a mocked-provider `terraform test`, a Docker build and a secret scan. [Latest passing run on `main`](https://github.com/Anurag-YadavIIH/consulting-rag-assistant/actions/runs/41832856151); details in [docs/ci-cd.md](docs/ci-cd.md).
+- **CD:** automated deployment is not built. It is future work.
+- **Retrieval quality:** on a 60-question hand-labelled gold set over 214 chunks, hybrid retrieval (what the API uses) scores hit@5 0.833, recall@5 0.796 and MRR@5 0.682. The optional cross-encoder reranker (`--rerank`, CLI only) raises MRR@5 to 0.796. The corpus is small; see [BENCHMARKS.md](BENCHMARKS.md) for the caveats.
+
+### Known limitations
+
+- **Extractive answers.** The API quotes passages from the documents; no language model was connected in the AWS deployment.
+- **No relevance threshold.** Retrieval returns the closest passages a user may see even when none answers the question. A similarity threshold was measured and could not separate the two cases ([BENCHMARKS.md](BENCHMARKS.md), 2026-11-03).
+- **HTTP between CloudFront and the load balancer.** Viewers used HTTPS; the origin hop was protected by a secret header and a CloudFront-only security group, not TLS.
+- **Content-Security-Policy in report-only mode** on the deployed site.
+- **One API task.** The BM25 keyword index lives in memory in each API process, so running more than one task needs a shared index first.
+- **No MFA on the IAM user** used for the deployment.
+- **Admin engagement-selector fix not merged.** On the deployed site, an admin with no explicit memberships saw no engagements. The fix is on the branch `fix/admin-engagement-selector` and is not in `main`.
 
 ---
 
 ## What it does
 
-- **Multimodal ingestion** — PowerPoint (slides *and* speaker notes), PDF (per
+- **Multimodal ingestion**: PowerPoint (slides *and* speaker notes), PDF (per
   page), plain text/markdown, and meeting audio (local transcription with
   timestamps). Each passage keeps its provenance so answers can cite the exact
   slide, page, or timestamp.
@@ -36,16 +56,16 @@ to any third-party API unless you explicitly wire one in.
     through the assistant.
   - Append-only audit log of every ingest and query (records redaction *counts*,
     never the redacted values).
-- **Grounded answers** — the model is instructed to answer only from retrieved
+- **Grounded answers**: the model is instructed to answer only from retrieved
   context and cite sources; every response carries its supporting chunks.
-- **Hybrid retrieval** — dense cosine search fused with BM25 keyword search via
+- **Hybrid retrieval**: dense cosine search fused with BM25 keyword search via
   Reciprocal Rank Fusion, with an optional cross-encoder reranker (`--rerank`)
   rescoring the fused candidates down to the final top-k.
-- **Local by default** — local embeddings (sentence-transformers) and a local LLM
+- **Local by default**: local embeddings (sentence-transformers) and a local LLM
   (via Ollama). An offline extractive mode runs with zero model downloads.
   OpenAI `text-embedding-3-large` is available as an opt-in, higher-quality
-  embedder (`--embedder openai`) — see "Egress notes" below.
-- **Evaluated, not vibes** — a retrieval eval harness reports hit@k, recall@k, and
+  embedder (`--embedder openai`); see "Egress notes" below.
+- **Evaluated, not vibes**: a retrieval eval harness reports hit@k, recall@k, and
   MRR against a hand-labeled gold set.
 
 ## Architecture
@@ -104,7 +124,7 @@ flowchart LR
 
 What was checked, and by whom:
 
-- **Automated tests:** 356 backend and 208 frontend tests pass on the deployed commit.
+- **Automated tests:** 356 backend and 208 frontend tests passed on the deployed commit (`77e1695`). `main` has since added CI and a Linux path fix that were not deployed; see [Status](#status).
 - **Read-only AWS checks:** service health, load balancer rules, CloudFront behaviours, RDS encryption and private access, S3 public access blocks, the deployed image digest and logs.
 - **Requests while it was running:** `/health` returned `200` and `/me` without a token returned a JSON `401` through CloudFront, while a direct request to the load balancer timed out.
 - **Manual browser tests (reported by me):** real Google sign-in with two accounts, the first admin from `INITIAL_ADMIN_EMAILS`, an invited Analyst, and a clearance change that changed which documents could be retrieved.
@@ -140,16 +160,16 @@ fused candidates (downloads `BAAI/bge-reranker-base` on first use).
 | *(none)* | yes | Local sentence-transformers embeddings + hybrid (dense+BM25) retrieval against the local NumPy store | nothing |
 | `--offline` | opt-in | Forces the hash embedder and `--store numpy`; zero network calls, zero model downloads; disables `--rerank` | nothing |
 | `--embedder openai` | opt-in | OpenAI `text-embedding-3-large` embeddings | chunk/query text, to OpenAI's API |
-| `--store pgvector` | opt-in | Postgres+pgvector vector store (via `docker compose up -d`) with a SQL-level RBAC filter as defense-in-depth | chunk text/vectors, to your own Postgres container — nothing external |
+| `--store pgvector` | opt-in | Postgres+pgvector vector store (via `docker compose up -d`) with a SQL-level RBAC filter as defense-in-depth | chunk text/vectors, to your own Postgres container: nothing external |
 | `--rerank` | opt-in | Local cross-encoder reranking | nothing at query time (model weights download once) |
 | Langfuse keys in `.env` | opt-in | Query tracing (question, retrieved ids+scores, latency, token usage) | question + answer text, to Langfuse Cloud (or your self-hosted instance) |
-| Any protected API route (Phase 4) | n/a for CLI | OIDC token verification | fetches your IdP's (Google by default) discovery doc + public JWKS — key material only, never user/client data |
+| Any protected API route (Phase 4) | n/a for CLI | OIDC token verification | fetches your IdP's (Google by default) discovery doc + public JWKS: key material only, never user/client data |
 
 `--offline` is mutually exclusive with `--embedder openai`, `--store pgvector`,
-and `--rerank` — combining them is a CLI error, not a silent fallback.
+and `--rerank`: combining them is a CLI error, not a silent fallback.
 
 **Upcoming, not yet built** (config placeholders exist; no feature code uses
-them yet — listed here so the egress story stays honest about what's actually
+them yet: listed here so the egress story stays honest about what's actually
 live vs. planned):
 
 | Planned flag/config | What it would do | What would leave the machine |
@@ -159,7 +179,7 @@ live vs. planned):
 
 ## Local setup (Windows + Docker Desktop)
 
-The offline demo above needs none of this — it's only for the optional
+The offline demo above needs none of this: it's only for the optional
 Postgres/pgvector backend and hosted-API config.
 
 1. **Install deps** (adds `pydantic-settings`/`python-dotenv` for config loading):
@@ -176,17 +196,17 @@ Postgres/pgvector backend and hosted-API config.
 
    This starts a `pgvector/pgvector` Postgres container, enables the `vector`
    extension via `docker/init/01-enable-pgvector.sql`, and persists data in a
-   named Docker volume (`pgdata`) — nothing is written into the repo.
+   named Docker volume (`pgdata`): nothing is written into the repo.
    Stop it with `docker compose down` (add `-v` to also drop the volume).
 
-3. **Configure environment** — copy the example file and fill in only what you
+3. **Configure environment**: copy the example file and fill in only what you
    need; every value defaults to "off"/local, so an empty `.env` is fine:
 
    ```bash
    copy .env.example .env
    ```
 
-4. **Run the existing offline demo** exactly as in the Quickstart above — it
+4. **Run the existing offline demo** exactly as in the Quickstart above: it
    does not read `.env`, Postgres, or any API key:
 
    ```bash
@@ -197,9 +217,9 @@ Postgres/pgvector backend and hosted-API config.
 
 `src/consultrag/config.py` exposes a `Settings` object (via `pydantic-settings`)
 for `OPENAI_API_KEY`, `GROQ_API_KEY`, `TAVILY_API_KEY`, `DATABASE_URL`,
-`OAUTH_DISCOVERY_URL`/`OAUTH_AUDIENCE` (OIDC authentication, provider-agnostic
-— see `src/consultrag/auth/oidc.py`), `LANGFUSE_PUBLIC_KEY`/
-`LANGFUSE_SECRET_KEY`/`LANGFUSE_HOST`, and the existing Ollama settings — all
+`OAUTH_DISCOVERY_URL`/`OAUTH_AUDIENCE` (OIDC authentication, provider-agnostic;
+see `src/consultrag/auth/oidc.py`), `LANGFUSE_PUBLIC_KEY`/
+`LANGFUSE_SECRET_KEY`/`LANGFUSE_HOST`, and the existing Ollama settings, all
 optional, all defaulted, and not imported by any offline code path today.
 
 ### Using the pgvector backend
@@ -223,7 +243,7 @@ RBAC is checked twice against this backend: a SQL `WHERE` filter on
 leaves Postgres), then the same in-process `AccessPolicy` check that runs for
 every backend. Neither replaces the other.
 
-To verify the migration didn't change retrieval *behavior* (not RBAC — see
+To verify the migration didn't change retrieval *behavior* (not RBAC; see
 `consultrag.eval.evaluate`'s docstring), run the same eval set against both
 backends and compare:
 
@@ -241,7 +261,7 @@ Tracing is a no-op until configured. To enable it: sign up for
 key into `.env` as `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`, and
 `pip install langfuse`. Every `RAGEngine.answer()` call then emits a trace
 with the question, retrieved chunk ids + scores, latency, and token usage
-(when the LLM backend reports it — currently `OllamaLLM` only). Self-hosting
+(when the LLM backend reports it, currently `OllamaLLM` only). Self-hosting
 Langfuse is a drop-in swap via `LANGFUSE_HOST`; it isn't a docker-compose
 service here given its footprint (its own Postgres + ClickHouse + Redis)
 relative to this project's size.
@@ -255,14 +275,14 @@ relative to this project's size.
 
 `requirements-api.txt` references `requirements.txt` via `-r`, so installing
 it alone (`pip install -r requirements-api.txt`) gets you everything needed to
-run the API — you don't need to install both separately.
+run the API: you don't need to install both separately.
 
 ## API service (Phase 4)
 
 `src/consultrag/api/` wraps the existing pipeline/RAG engine behind a FastAPI
 service with Google/OIDC authentication and Postgres-backed RBAC
 authorization (`src/consultrag/authz/`). Authentication (who you are) and
-authorization (what you can do) are deliberately separate — a Google ID token
+authorization (what you can do) are deliberately separate: a Google ID token
 only ever proves identity; permissions always come from the
 `engagement_memberships` table, never from the token's own claims.
 
@@ -281,7 +301,7 @@ uvicorn consultrag.api.main:app --reload
 ```
 
 Set `OAUTH_AUDIENCE` (your Google OAuth client ID) and a real
-`APP_JWT_SECRET` in `.env` first — the app refuses to start with an unset or
+`APP_JWT_SECRET` in `.env` first: the app refuses to start with an unset or
 placeholder `APP_JWT_SECRET` (see "Fail-closed startup checks" below).
 
 ### Getting a Google ID token for manual testing
@@ -292,7 +312,7 @@ set as `OAUTH_AUDIENCE`. To get a token to test with, the quickest path is the
 [OAuth 2.0 Playground](https://developers.google.com/oauthplayground):
 click the gear icon, check "Use your own OAuth credentials", paste your
 client ID/secret, then on the left pick the `openid`, `email`, and `profile`
-scopes, authorize, and exchange the code — the playground shows you the raw
+scopes, authorize, and exchange the code: the playground shows you the raw
 ID token (a long `eyJ...` string). It's short-lived (about an hour), so grab
 a fresh one each session.
 
@@ -404,7 +424,9 @@ frontend uses upload. For bulk server-side ingestion, use
 ### Documents, citations and activity
 
 Tested with the unit tests and with Docker Compose and Postgres on my
-machine. **Not tested on AWS.**
+machine. On AWS (4 November 2026, commit `77e1695`) I also checked uploads
+with redaction counts, cited passages and the Activity page; see
+[docs/aws-evidence.md](docs/aws-evidence.md).
 
 - **Citations:** each `/query` and `/draft` citation has a `number` and the
   passage `text`. The number matches the `[n]` the passage had in the prompt,
@@ -445,14 +467,14 @@ machine. **Not tested on AWS.**
 
 ### Fail-closed startup checks
 
-The app refuses to start (not a warning — a hard error) in two cases:
+The app refuses to start (not a warning but a hard error) in two cases:
 
 - `APP_JWT_SECRET` is unset or looks like a placeholder (`""`, `"changeme"`,
-  `"secret"`, shorter than 16 characters, etc.) — unless `DEV_AUTH_BYPASS` is on.
+  `"secret"`, shorter than 16 characters, etc.), unless `DEV_AUTH_BYPASS` is on.
 - `DEV_AUTH_BYPASS=true` is set but `APP_ENV` doesn't **explicitly** equal
   `development` or `dev`. This is a whitelist, not a blacklist: an unset,
   empty, or misspelled `APP_ENV` denies bypass exactly like `APP_ENV=production`
-  would — there's no "anything that isn't literally production is fine"
+  would; there's no "anything that isn't literally production is fine"
   fallback. When bypass *is* correctly enabled, every request is treated as a
   fixed dev user and a visible warning is logged once at startup.
 
@@ -463,12 +485,12 @@ a wildcard would let any website make signed-in calls.
 If `OAUTH_AUDIENCE` is unset (and bypass is off), the app still starts but
 logs a warning, and every `POST /auth/login` is rejected until it's set.
 
-`DEV_AUTH_BYPASS` is for local development only — every protected route skips
+`DEV_AUTH_BYPASS` is for local development only: every protected route skips
 authentication entirely when it's on.
 
 ### Test coverage note: what a green CI run does and doesn't prove
 
-Most of the API test suite (`tests/test_api.py`) needs no real Postgres —
+Most of the API test suite (`tests/test_api.py`) needs no real Postgres:
 authorization for `/ingest`/`/query`/`/draft` is decided entirely from the
 verified access token's own claims, so fakes/dependency-overrides cover the
 401/403 gate, spoofed-parameter rejection, and cross-engagement leakage
@@ -477,20 +499,20 @@ checks without a database. **One test is the exception**
 skip-if-Postgres-unreachable, same as `tests/test_pgvectorstore.py` and
 `tests/test_authz_repository.py`. That means: **a green `pytest tests/ -q` run
 with no Postgres running does not exercise PgVectorStore's SQL-level
-isolation filter or the real authz-store admin path at all** — those are
+isolation filter or the real authz-store admin path at all**: those are
 silently skipped, not passed. Run `docker compose up -d` first if you want
 those to actually execute; check for `SKIPPED` lines in `-rs` output
 (`pytest tests/ -q -rs`) to know which mode you're actually in.
 
 ## Demo UI
 
-`ui/app.py` is a thin Streamlit client over the FastAPI service — it holds no
+`ui/app.py` is a thin Streamlit client over the FastAPI service: it holds no
 business logic and never touches the DB, vector store, or RAG engine directly;
 every server interaction goes through `ui/api_client.py`'s `query()`/`ingest()`/
 `me()`. "Service + client": the API is the service, this is just a client of it.
 
 **Not containerized.** Running `streamlit run` locally against the composed
-API is sufficient for a demo — there's no `ui` service in `docker-compose.yml`
+API is sufficient for a demo: there's no `ui` service in `docker-compose.yml`
 and none is planned; this keeps the compose stack to what actually needs to be
 a long-running service (Postgres, the API), not a UI you'd run once to look at.
 
@@ -502,7 +524,7 @@ python scripts/migrate_authz.py
 ```
 
 ```powershell
-# 2. Run the API with DEV_AUTH_BYPASS for local UI use — no Google sign-in
+# 2. Run the API with DEV_AUTH_BYPASS for local UI use: no Google sign-in
 #    needed to click around the demo. This is local-dev only; see the
 #    fail-closed startup checks above for why bypass can't accidentally
 #    leak into anything that looks like production.
@@ -520,16 +542,16 @@ streamlit run ui/app.py
 ```
 
 `requirements-ui.txt` is a *third* independent dependency set (base / api /
-ui) — `streamlit` + `httpx` only, nothing from `requirements.txt` or
+ui): `streamlit` + `httpx` only, nothing from `requirements.txt` or
 `requirements-api.txt` pulled in or duplicated.
 
 **The production demo path is real Google sign-in, not bypass.** Every
-auth-related decision in the UI funnels through one function —
-`get_auth_headers()` in `ui/api_client.py` — commented as the single seam
+auth-related decision in the UI funnels through one function,
+`get_auth_headers()` in `ui/api_client.py`, commented as the single seam
 that changes when Google OIDC sign-in replaces `DEV_AUTH_BYPASS`; nothing
 else in the UI assumes how auth works.
 
-The UI degrades gracefully if the API isn't running — `ui/api_client.py`
+The UI degrades gracefully if the API isn't running: `ui/api_client.py`
 catches transport-level failures (connection refused, timeout), not just
 HTTP error statuses, and `ui/app.py` renders a plain "can't reach the API"
 message instead of a stack trace.
@@ -537,13 +559,13 @@ message instead of a stack trace.
 ## Frontend (Next.js)
 
 `frontend/` is a Next.js (App Router) + TypeScript + Tailwind client over the
-same FastAPI service the Streamlit UI talks to — same "service + client"
+same FastAPI service the Streamlit UI talks to: same "service + client"
 split: all business logic, auth, and RBAC stay server-side, and every call
 goes through one typed wrapper, `frontend/lib/api.ts`
 (`me()`/`query()`/`uploadDocument()`/`ingest()`, mirroring
 `ui/api_client.py`'s pattern in TypeScript). The ingest panel uploads a file
 picked from your computer through `POST /ingest/upload`. It is a **separate, independent dependency set**
-(`frontend/package.json`, npm) — it doesn't touch `requirements.txt`,
+(`frontend/package.json`, npm): it doesn't touch `requirements.txt`,
 `requirements-api.txt`, or `requirements-ui.txt`, and installing/running it
 has no effect on the offline CLI demo or any `pytest tests/` run.
 
@@ -557,7 +579,7 @@ python scripts/migrate_authz.py
 ```
 
 ```powershell
-# 2. Run the API with DEV_AUTH_BYPASS — no Google sign-in needed locally.
+# 2. Run the API with DEV_AUTH_BYPASS: no Google sign-in needed locally.
 #    Local-dev only; see "Fail-closed startup checks" above.
 $env:DEV_AUTH_BYPASS = "true"
 $env:APP_ENV = "development"
@@ -577,7 +599,7 @@ npm run dev
 ```
 
 Open `http://localhost:3000`. `CORS_ALLOWED_ORIGINS` on the API side defaults
-to empty (no browser origin allowed) — it must be set explicitly, as above,
+to empty (no browser origin allowed); it must be set explicitly, as above,
 for the browser-based frontend to reach the API at all; see `config.py`.
 
 ### Sign-in (Google)
@@ -641,22 +663,25 @@ allowed for the given client ID". Sign in once, then grant access with
 Docker Compose (`APP_ENV=production`, bypass off) and the static export
 served on `http://localhost:3000` in Chrome: sign-in, "No access yet" before
 any grant, access after granting acme, an acme upload and query, sign-out,
-and reloads before and after signing out. **Not tested on AWS.**
+and reloads before and after signing out. Real Google sign-in with two
+accounts was also tested on AWS on 4 November 2026; see
+[docs/aws-evidence.md](docs/aws-evidence.md).
 
 Limitations:
 
 - **The Streamlit UI still works only with DEV_AUTH_BYPASS.** It never used
   `/auth/login` or `/auth/refresh`, and has no Google sign-in.
 - **Admins see a fixed engagement list.** An admin with no explicit
-  memberships gets `NEXT_PUBLIC_FALLBACK_ENGAGEMENTS` in the selector; there's
-  no endpoint listing every engagement yet. Non-admins only ever see their
-  own memberships.
+  memberships gets `NEXT_PUBLIC_FALLBACK_ENGAGEMENTS` in the selector. The
+  admin-only `GET /admin/engagements` exists, but the change that uses it is
+  on the unmerged branch `fix/admin-engagement-selector`. Non-admins only
+  ever see their own memberships.
 - **Chunks with no engagement** (CLI ingests without `--engagement`) are
   readable by any account that has at least one engagement or is an admin,
   as before. Accounts with no access can't query, so they can't reach them.
 - **The local run used `http://localhost`.** Browsers accept `Secure` cookies
-  there; anywhere else, sign-in needs HTTPS. Hosting is a future step; see
-  `docs/aws-deployment.md`.
+  there; anywhere else, sign-in needs HTTPS. On AWS the site was served over
+  HTTPS through CloudFront; see `docs/aws-evidence.md`.
 
 ### The Ask page and what its scores mean
 
@@ -701,8 +726,10 @@ AWS**.
 ### Team access (admins)
 
 Admins give people access in the app, on the **Team** page, without shell
-commands. Tested with unit tests and Docker Compose locally; **not tested on
-AWS**.
+commands. Tested with unit tests and Docker Compose locally, and on AWS on
+4 November 2026: the first admin from `INITIAL_ADMIN_EMAILS`, an invitation,
+a change from Analyst to Manager, and removal (reported in
+[docs/aws-evidence.md](docs/aws-evidence.md)).
 
 - **First admin:** `INITIAL_ADMIN_EMAILS` (comma-separated). A listed
   account becomes a global admin with clearance 3 the first time it signs in,
@@ -757,7 +784,7 @@ admin role.
 serve `out/` instead. `NEXT_PUBLIC_*` values are baked in at build time.
 
 The Management area (`frontend/app/management/page.tsx`) only *renders* for
-high-clearance/admin users per `/me` — that gate is convenience/UI tidiness,
+high-clearance/admin users per `/me`: that gate is convenience/UI tidiness,
 not a security boundary. The backend enforces clearance and engagement
 membership on every endpoint regardless of what the frontend shows or hides.
 
@@ -765,7 +792,7 @@ membership on every endpoint regardless of what the frontend shows or hides.
 
 ```bash
 cd frontend
-npm run test    # vitest, fetch mocked — no live backend needed, not run in CI against one
+npm run test    # vitest, fetch mocked; needs no live backend
 npm run build   # static export to out/
 ```
 
@@ -773,16 +800,16 @@ npm run build   # static export to out/
 
 A fresh `npm install` currently reports a handful of dev-tooling advisories
 (esbuild's dev server allowing cross-origin requests; PostCSS's CSS
-stringify XSS) — both are build/dev-time concerns in transitive
+stringify XSS): both are build/dev-time concerns in transitive
 dependencies of Next.js/Vitest, not runtime exploits in this app's code.
 `npm audit fix --force` "fixes" them by downgrading `next` to `9.x`, which
-is not an upgrade — left unapplied deliberately rather than silently
+is not an upgrade, so it is left unapplied deliberately rather than silently
 regressing the framework version.
 
 ## Design decisions (and the trade-offs)
 
-- **Redaction before indexing, not at display time.** Stronger guarantee — raw PII
-  is never persisted — at the cost of not being able to "un-redact" later.
+- **Redaction before indexing, not at display time.** Stronger guarantee (raw PII
+  is never persisted), at the cost of not being able to "un-redact" later.
 - **Vector store written from scratch on NumPy, default backend.** Keeps everything
   local and makes the retrieval math inspectable. `PgVectorStore` (`--store
   pgvector`) is available when the corpus outgrows in-memory cosine search or
@@ -799,22 +826,36 @@ python -m pytest tests/ -q        # unit + end-to-end (incl. access-control) tes
 python scripts/run_eval.py --offline
 ```
 
+On `main`, CI runs 373 backend tests (with 0 skipped, so every Postgres-backed
+test really runs), 208 frontend tests, the type check, the static build and a
+mocked-provider `terraform test` with 13 runs. See [docs/ci-cd.md](docs/ci-cd.md)
+and the [latest run on `main`](https://github.com/Anurag-YadavIIH/consulting-rag-assistant/actions/runs/41832856151).
+
 Retrieval metrics are reported on `eval/eval_set.jsonl`. Replace the sample set
-with a real 20–30 question gold set from your own corpus to get meaningful numbers.
+with a real 20 to 30 question gold set from your own corpus to get meaningful numbers.
 Recorded baseline runs (date, gold-set size, embedder, config, literal
-hit@k/recall@k/MRR for both backends) live in [BENCHMARKS.md](BENCHMARKS.md) —
+hit@k/recall@k/MRR for both backends) live in [BENCHMARKS.md](BENCHMARKS.md);
 append a new dated entry there each time the eval set or retrieval pipeline
 changes meaningfully, rather than relying on memory of "it used to be X".
 
 ## Roadmap
 
-- Speaker diarization for meeting audio (pyannote)
+Not built yet:
+
+- Automated deployment (CD) from CI to AWS
+- A way to say "not in the documents": a cross-encoder relevance score or a
+  grounded generative model, measured the same way as the threshold study in
+  [BENCHMARKS.md](BENCHMARKS.md) before it is turned on
+- Enforcing the CSP, HTTPS from CloudFront to the load balancer, and a shared
+  keyword index so the API can run more than one task
+- Speaker diarization for meeting audio (pyannote; an extension point in the
+  audio loader)
 - Groq-backed contextual chunking (config placeholder exists; not implemented)
 - Live web search (Tavily) merged with internal retrieval, with an outbound
   query sanitizer (config placeholder exists; not implemented)
 - A RAGAS-style/LLM-judge generation eval (faithfulness, answer relevancy)
-- Presidio-based NER redaction for names/orgs/locations
-- A small web UI for analysts
+- Presidio-based NER redaction for names/orgs/locations (a hook,
+  `redact_with_presidio`, exists but is not wired in)
 
 ## Project layout
 
@@ -836,18 +877,20 @@ src/consultrag/
   eval.py       hit@k / recall@k / MRR (hybrid retrieval, RBAC-free by design)
   authz/        Postgres-backed RBAC: users + engagement_memberships
   auth/         authentication: OIDC verification, app session tokens,
-                DEV_AUTH_BYPASS (auth != authz — see "API service" above)
+                DEV_AUTH_BYPASS (auth != authz; see "API service" above)
   api/          FastAPI service: /auth/login, /auth/refresh, /auth/logout,
-                /ingest/upload,
-                /ingest (development only), /query, /draft, /me
+                /ingest/upload, /ingest (development only), /query, /draft,
+                /me, /documents, /admin (team access and activity)
 scripts/        ingest.py, query.py, run_eval.py, migrate_pg.py,
                 migrate_authz.py, seed_authz.py
 ui/             api_client.py (thin httpx wrapper, no business logic),
-                app.py (Streamlit demo client — see "Demo UI" above)
-frontend/       Next.js + TypeScript client (lib/api.ts, lib/auth.ts) —
+                app.py (Streamlit demo client; see "Demo UI" above)
+frontend/       Next.js + TypeScript client (lib/api.ts, lib/auth.ts);
                 see "Frontend (Next.js)" above
-tests/          redaction, chunking, retrieval, reranking, pgvectorstore,
-                authz_repository, oidc, app_token, google_signin,
-                seed_authz, api, api_client,
-                end-to-end access control
+tests/          unit, API, Postgres-backed, access-control and Terraform
+                tests (373 in CI)
+docker/         API image (docker/api/Dockerfile) and the local Postgres init
+infra/terraform/  AWS infrastructure, with a mocked-provider terraform test
+docs/           AWS evidence, deployment notes, runbook and CI/CD notes
+.github/workflows/  CI (ci.yml)
 ```

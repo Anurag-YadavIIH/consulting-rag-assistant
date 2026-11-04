@@ -2,7 +2,15 @@
 
 ConsultRAG has continuous integration (CI) with GitHub Actions in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml). There is **no automated deployment (CD) yet**: nothing in the workflow deploys to AWS, calls an AWS API or holds AWS credentials. Deployment is still the manual process in [aws-frontend-runbook.md](aws-frontend-runbook.md).
 
-**Status:** all six jobs passed on the first GitHub run (4 November 2026, pull request #2): Backend tests ran 373 tests with 0 skipped against the Postgres service container, the Frontend job ran 208 tests plus the type check and static build, `terraform test` passed 13 runs with no credentials, the Docker image built without being pushed, and gitleaks found no leaks.
+**Status:** all six jobs passed on every run so far (4 November 2026): Backend tests ran 373 tests with 0 skipped against the Postgres service container, the Frontend job ran 208 tests plus the type check and static build, `terraform test` passed 13 runs with no credentials, the Docker image built without being pushed, and gitleaks found no leaks.
+
+| Run | Trigger | Result |
+|---|---|---|
+| [41831578025](https://github.com/Anurag-YadavIIH/consulting-rag-assistant/actions/runs/41831578025) | pull request #2, first run | all six jobs passed |
+| [41832382450](https://github.com/Anurag-YadavIIH/consulting-rag-assistant/actions/runs/41832382450) | pull request #2, second run | all six jobs passed; npm and Docker caches restored |
+| [41832856151](https://github.com/Anurag-YadavIIH/consulting-rag-assistant/actions/runs/41832856151) | push to `main` after merging #2 | all six jobs passed |
+
+The pip cache has missed on every run so far. `actions/setup-python` puts the Python patch version in the cache key, and GitHub's Ubuntu runners have been a mix of images with Python 3.11.17 and 3.11.18, so a run often lands on the other version from the one that saved the cache. Caches saved by pull-request runs also can't be read by `main`. The npm and Docker caches don't depend on this and are restored. A pip cache key without the patch version would fix it; that isn't built.
 
 ## When it runs
 
@@ -17,7 +25,7 @@ The job names are fixed so they can be made required checks later.
 
 | Job | What it does |
 |---|---|
-| **Backend tests** | Python 3.11 with a `pgvector/pgvector:pg16` Postgres service container. Installs CPU-only PyTorch and `requirements-api.txt`, runs the full pytest suite, then fails if **any** test was skipped. Every database test skips itself when Postgres is unreachable, so this check proves they really ran. Terraform is installed too, because one pytest test runs `terraform test`. The tests use a deterministic hash embedder, and `HF_HUB_OFFLINE=1` makes any accidental model download fail instead of downloading. |
+| **Backend tests** | Python 3.11 with a `pgvector/pgvector:pg16` Postgres service container. Installs CPU-only PyTorch, `requirements-api.txt` and `requirements-ui.txt` (the tests need `httpx`, which only the UI file lists), runs the full pytest suite, then fails if **any** test was skipped. Every database test skips itself when Postgres is unreachable, so this check proves they really ran. Terraform is installed too, because one pytest test runs `terraform test`. The tests use a deterministic hash embedder, and `HF_HUB_OFFLINE=1` makes any accidental model download fail instead of downloading. |
 | **Frontend** | Node 22: `npm ci`, the vitest suite, `tsc --noEmit` and the static `next build`, with placeholder public values (`http://localhost:8000` and a dummy Google client ID). |
 | **Terraform** | Terraform 1.9.8 in `infra/terraform`: `fmt -check -recursive`, `init -backend=false`, `validate`, and `terraform test`. The test file [`infra/terraform/tests/plan.tftest.hcl`](../infra/terraform/tests/plan.tftest.hcl) plans the real configuration with mocked AWS and random providers, so it needs no credentials. It checks the variable rules and a few security properties: the database is private and encrypted, the frontend bucket blocks public access, the load balancer answers 403 by default, CloudFront redirects to HTTPS, and direct debug access is off. |
 | **Docker build** | Builds `docker/api/Dockerfile` with Buildx and the GitHub Actions build cache. The image is **not pushed** anywhere. |
@@ -53,5 +61,5 @@ docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.1 git /repo --redact
 
 ## Not built yet
 
-- Automated deployment to AWS. Images are not pushed to ECR, and nothing runs `terraform plan` or `apply` against a real account.
+- Automated deployment (CD) to AWS. Images are not pushed to ECR, and nothing runs `terraform plan` or `apply` against a real account. This is future work; deployment was manual, following [aws-frontend-runbook.md](aws-frontend-runbook.md).
 - Branch protection. The checks run, but no check is required to merge yet.
