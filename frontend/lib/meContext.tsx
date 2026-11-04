@@ -14,6 +14,8 @@ export interface MeContextValue {
   engagementOptions: string[];
   engagement: string | undefined;
   setEngagement: (engagement: string) => void;
+  /** Admins: hands the shell a fresh GET /admin/engagements result. */
+  onEngagementsLoaded?: (engagements: string[]) => void;
 }
 
 export const MeContext = createContext<MeContextValue | null>(null);

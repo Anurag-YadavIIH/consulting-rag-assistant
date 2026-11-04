@@ -33,7 +33,7 @@ type Pending =
  * in the database).
  */
 export default function TeamPage() {
-  const { meInfo } = useMeContext();
+  const { meInfo, onEngagementsLoaded } = useMeContext();
   const [members, setMembers] = useState<MemberInfo[] | null>(null);
   const [invitations, setInvitations] = useState<InvitationInfo[]>([]);
   const [engagements, setEngagements] = useState<string[]>([]);
@@ -49,10 +49,11 @@ export default function TeamPage() {
       setMembers(m.members);
       setInvitations(i.invitations);
       setEngagements(e.engagements);
+      onEngagementsLoaded?.(e.engagements);
     } catch (err) {
       setError(err);
     }
-  }, []);
+  }, [onEngagementsLoaded]);
 
   useEffect(() => {
     if (meInfo.is_admin) void refresh();

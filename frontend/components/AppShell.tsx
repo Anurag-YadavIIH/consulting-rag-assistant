@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { me, NotAuthenticatedError, type MeResponse } from "../lib/api";
+import { listEngagements, me, NotAuthenticatedError, type MeResponse } from "../lib/api";
 import { loginWithGoogleCredential, LoginError, onSignedOut, signOut } from "../lib/auth";
 import { MeContext } from "../lib/meContext";
 import { ErrorBanner } from "./ErrorBanner";
@@ -14,18 +14,18 @@ import { Wordmark } from "./Logo";
 import { ThemeControl } from "./ThemeControl";
 import { Spinner } from "./ui/Spinner";
 
-const FALLBACK_ENGAGEMENTS = (
-  process.env.NEXT_PUBLIC_FALLBACK_ENGAGEMENTS ?? ""
-)
-  .split(",")
-  .map((e) => e.trim())
-  .filter(Boolean);
-
 export type ShellState =
   | { kind: "loading" }
   | { kind: "signedOut"; error?: string | null; busy?: boolean }
   | { kind: "error"; error: unknown }
-  | { kind: "ready"; meInfo: MeResponse };
+  | {
+      kind: "ready";
+      meInfo: MeResponse;
+      /** Admins only: every engagement from GET /admin/engagements. */
+      allEngagements?: string[];
+      /** Admins only: that request failed; own memberships are still shown. */
+      engagementsError?: unknown;
+    };
 
 /** No engagement membership and not an admin: a signed-in account nobody
  * has granted anything yet. The API refuses its queries (403) as well. */
@@ -33,12 +33,41 @@ export function hasNoAccess(meInfo: MeResponse): boolean {
   return !meInfo.is_admin && meInfo.engagements.length === 0;
 }
 
-/** Engagements to offer. Admins with no explicit memberships get the
- * build-time fallback list (there's no endpoint listing all engagements
- * yet); everyone else gets exactly their memberships. */
-export function engagementOptionsFor(meInfo: MeResponse): string[] {
-  if (meInfo.engagements.length > 0) return meInfo.engagements;
-  return meInfo.is_admin ? FALLBACK_ENGAGEMENTS : [];
+/** Engagements to offer, sorted. Everyone gets their own memberships (from
+ * /me). Admins also get every engagement the admin-only GET
+ * /admin/engagements lists; non-admins never use that list. */
+export function engagementOptionsFor(meInfo: MeResponse, allEngagements?: string[]): string[] {
+  const names = new Set(meInfo.engagements);
+  if (meInfo.is_admin) for (const e of allEngagements ?? []) names.add(e);
+  return Array.from(names).sort();
+}
+
+/** The engagement to select: keep the current one while it's offered,
+ * otherwise the first available (undefined when there are none). */
+export function pickEngagement(options: string[], current: string | undefined): string | undefined {
+  return current !== undefined && options.includes(current) ? current : options[0];
+}
+
+/** Admins: the full list from the admin-only GET /admin/engagements. A
+ * failure is returned, not thrown, so the admin keeps their own memberships. */
+export async function loadAllEngagements(): Promise<{ allEngagements?: string[]; engagementsError?: unknown }> {
+  try {
+    const { engagements } = await listEngagements();
+    return { allEngagements: engagements, engagementsError: undefined };
+  } catch (err) {
+    return { allEngagements: undefined, engagementsError: err };
+  }
+}
+
+/** After sign-in or a reload: /me for everyone, plus the admin list for
+ * admins only. Throws what me() throws (e.g. NotAuthenticatedError). */
+export async function loadSignedInState(): Promise<{ state: ShellState & { kind: "ready" }; engagement: string | undefined }> {
+  const meInfo = await me();
+  const extra = meInfo.is_admin ? await loadAllEngagements() : {};
+  return {
+    state: { kind: "ready", meInfo, ...extra },
+    engagement: pickEngagement(engagementOptionsFor(meInfo, extra.allEngagements), undefined),
+  };
 }
 
 export interface NavItem {
@@ -103,6 +132,8 @@ export function ShellView({
   setEngagement,
   onCredential,
   onSignOut,
+  onRetryEngagements = () => {},
+  onEngagementsLoaded = () => {},
   children,
 }: {
   state: ShellState;
@@ -110,6 +141,8 @@ export function ShellView({
   setEngagement: (engagement: string) => void;
   onCredential: (idToken: string) => void;
   onSignOut: () => void;
+  onRetryEngagements?: () => void;
+  onEngagementsLoaded?: (engagements: string[]) => void;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -142,11 +175,13 @@ export function ShellView({
     return <NoAccessPanel meInfo={meInfo} onSignOut={onSignOut} />;
   }
 
-  const engagementOptions = engagementOptionsFor(meInfo);
+  const engagementOptions = engagementOptionsFor(meInfo, state.allEngagements);
   const nav = navItemsFor(meInfo);
 
   return (
-    <MeContext.Provider value={{ meInfo, engagementOptions, engagement, setEngagement }}>
+    <MeContext.Provider
+      value={{ meInfo, engagementOptions, engagement, setEngagement, onEngagementsLoaded }}
+    >
       <div className="min-h-screen lg:flex">
         {/* Phone and tablet: a top bar with a menu button. */}
         <div className="on-dark flex items-center justify-between border-b border-side-border bg-side-bg px-5 py-2 lg:hidden">
@@ -171,7 +206,14 @@ export function ShellView({
             <Wordmark surface="dark" />
           </div>
           <div className="space-y-6 lg:mt-8 lg:flex lg:flex-1 lg:flex-col">
-            <EngagementSelector options={engagementOptions} value={engagement} onChange={setEngagement} />
+            <EngagementSelector
+              options={engagementOptions}
+              value={engagement}
+              onChange={setEngagement}
+              isAdmin={meInfo.is_admin}
+              loadFailed={Boolean(state.engagementsError)}
+              onRetry={onRetryEngagements}
+            />
             <nav aria-label="Sections">
               <ul className="space-y-1">
                 {nav.map((item) => {
@@ -214,9 +256,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const loadMe = useCallback(async () => {
     try {
-      const res = await me();
-      setEngagement(engagementOptionsFor(res)[0]);
-      setState({ kind: "ready", meInfo: res });
+      const loaded = await loadSignedInState();
+      setEngagement(loaded.engagement);
+      setState(loaded.state);
     } catch (err) {
       if (err instanceof NotAuthenticatedError) {
         setState({ kind: "signedOut" });
@@ -225,6 +267,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       }
     }
   }, []);
+
+  const retryEngagements = useCallback(async () => {
+    if (state.kind !== "ready" || !state.meInfo.is_admin) return;
+    const extra = await loadAllEngagements();
+    setState((s) => (s.kind === "ready" ? { ...s, ...extra } : s));
+  }, [state]);
+
+  // The Team page already fetches the same list; it hands it over after each
+  // change so a new engagement shows up without a reload.
+  const onEngagementsLoaded = useCallback((engagements: string[]) => {
+    setState((s) => (s.kind === "ready" && s.meInfo.is_admin ? { ...s, allEngagements: engagements, engagementsError: undefined } : s));
+  }, []);
+
+  // Keep a valid selection: the first available engagement when there's none
+  // yet, or when the selected one is no longer offered.
+  const options = state.kind === "ready" ? engagementOptionsFor(state.meInfo, state.allEngagements) : [];
+  const optionsKey = options.join(",");
+  useEffect(() => {
+    const next = pickEngagement(options, engagement);
+    if (next !== undefined && next !== engagement) setEngagement(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [optionsKey, engagement]);
 
   useEffect(() => {
     // Any failed refresh or sign-out, from anywhere in the app, drops back
@@ -267,6 +331,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       setEngagement={setEngagement}
       onCredential={onCredential}
       onSignOut={onSignOut}
+      onRetryEngagements={() => void retryEngagements()}
+      onEngagementsLoaded={onEngagementsLoaded}
     >
       {children}
     </ShellView>

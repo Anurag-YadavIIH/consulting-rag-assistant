@@ -542,7 +542,7 @@ uvicorn consultrag.api.main:app --reload
 cd frontend
 copy .env.local.example .env.local
 # .env.local.example documents NEXT_PUBLIC_API_BASE_URL (defaults to
-# http://localhost:8000) and NEXT_PUBLIC_FALLBACK_ENGAGEMENTS.
+# http://localhost:8000).
 npm install
 npm run dev
 ```
@@ -618,10 +618,11 @@ Limitations:
 
 - **The Streamlit UI still works only with DEV_AUTH_BYPASS.** It never used
   `/auth/login` or `/auth/refresh`, and has no Google sign-in.
-- **Admins see a fixed engagement list.** An admin with no explicit
-  memberships gets `NEXT_PUBLIC_FALLBACK_ENGAGEMENTS` in the selector; there's
-  no endpoint listing every engagement yet. Non-admins only ever see their
-  own memberships.
+- **Engagement selector.** Admins see every engagement from the admin-only
+  `GET /admin/engagements` (memberships, open invitations and documents),
+  merged with their own memberships. Non-admins only ever see their own
+  memberships from `/me`. `NEXT_PUBLIC_FALLBACK_ENGAGEMENTS` is no longer
+  used for this.
 - **Chunks with no engagement** (CLI ingests without `--engagement`) are
   readable by any account that has at least one engagement or is an admin,
   as before. Accounts with no access can't query, so they can't reach them.

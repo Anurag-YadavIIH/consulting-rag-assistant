@@ -19,6 +19,8 @@ import {
   ShellView,
   engagementOptionsFor,
   hasNoAccess,
+  loadSignedInState,
+  pickEngagement,
   type ShellState,
 } from "../components/AppShell";
 import type { MeResponse } from "../lib/api";
@@ -93,6 +95,88 @@ it("hasNoAccess: only non-admins with no memberships", () => {
 it("engagement options: memberships for members, never the fallback for non-admins", () => {
   expect(engagementOptionsFor(member)).toEqual(["acme"]);
   expect(engagementOptionsFor(unknownAccount)).toEqual([]);
+});
+
+it("admins get the admin list merged with their own memberships, sorted and de-duplicated", () => {
+  const adminWithAcme = { ...admin, engagements: ["meridian", "acme"] };
+  expect(engagementOptionsFor(adminWithAcme, ["globex", "acme", "kestrel"])).toEqual(["acme", "globex", "kestrel", "meridian"]);
+  expect(engagementOptionsFor(admin, ["globex", "acme"])).toEqual(["acme", "globex"]);
+  expect(engagementOptionsFor(admin)).toEqual([]); // no build-time fallback
+  // A non-admin never gets engagements beyond their memberships, whatever is passed.
+  expect(engagementOptionsFor(member, ["globex", "kestrel"])).toEqual(["acme"]);
+});
+
+it("the first available engagement is selected, and a still-offered choice is kept", () => {
+  expect(pickEngagement(["acme", "globex"], undefined)).toBe("acme");
+  expect(pickEngagement(["acme", "globex"], "globex")).toBe("globex");
+  expect(pickEngagement(["acme", "globex"], "gone")).toBe("acme");
+  expect(pickEngagement([], undefined)).toBeUndefined();
+});
+
+// --- loading /me and, for admins only, /admin/engagements ------------------------------
+
+function stubApi(meBody: MeResponse, engagements: { status: number; body: unknown }) {
+  const calls: string[] = [];
+  const fetchMock = vi.fn(async (url: string) => {
+    const path = new URL(url).pathname;
+    calls.push(path);
+    const json = (status: number, body: unknown) =>
+      new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+    if (path === "/me") return json(200, meBody);
+    if (path === "/admin/engagements") return json(engagements.status, engagements.body);
+    return json(404, { detail: "not stubbed" });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return calls;
+}
+
+it("an admin with no memberships gets every engagement from /admin/engagements, first one selected", async () => {
+  const calls = stubApi(admin, { status: 200, body: { engagements: ["globex", "acme"] } });
+  const { state, engagement } = await loadSignedInState();
+  expect(calls).toEqual(["/me", "/admin/engagements"]);
+  expect(engagementOptionsFor(state.meInfo, state.allEngagements)).toEqual(["acme", "globex"]);
+  expect(engagement).toBe("acme");
+  const html = view(state);
+  expect(html).toContain('id="engagement-select"');
+  expect(html).toContain(">globex</option>");
+  expect(html).not.toContain("NEXT_PUBLIC_FALLBACK_ENGAGEMENTS");
+  vi.unstubAllGlobals();
+});
+
+it("non-admins only call /me, never the admin list", async () => {
+  const calls = stubApi(member, { status: 200, body: { engagements: ["globex"] } });
+  const { state, engagement } = await loadSignedInState();
+  expect(calls).toEqual(["/me"]);
+  expect(state.allEngagements).toBeUndefined();
+  expect(engagement).toBe("acme");
+  expect(view(state)).not.toContain(">globex</option>");
+  vi.unstubAllGlobals();
+});
+
+it("a failed admin list shows an error with a retry, keeps own memberships, and the page still renders", async () => {
+  stubApi({ ...admin, engagements: ["acme"] }, { status: 500, body: { detail: "boom" } });
+  const { state, engagement } = await loadSignedInState();
+  expect(state.engagementsError).toBeTruthy();
+  expect(engagement).toBe("acme");
+  const html = view(state);
+  expect(html).toContain(SECRET_CHILD);
+  expect(html).toContain('role="alert"');
+  expect(html).toContain("Couldn&#x27;t load the full engagement list. Showing your own engagements only.");
+  expect(html).toContain(">Try again</button>");
+  expect(html).toContain(">acme</option>");
+  vi.unstubAllGlobals();
+});
+
+it("a fresh deployment with no engagements points an admin to the Team page, not an environment variable", async () => {
+  stubApi(admin, { status: 200, body: { engagements: [] } });
+  const { state, engagement } = await loadSignedInState();
+  expect(engagement).toBeUndefined();
+  const html = view(state);
+  expect(html).toContain("No engagements yet.");
+  expect(html).toMatch(/<a href="\/team\/"[^>]*>Team page<\/a>/);
+  expect(html).not.toContain("NEXT_PUBLIC");
+  expect(html).not.toContain('role="alert"');
+  vi.unstubAllGlobals();
 });
 
 // --- navigation ----------------------------------------------------------------
