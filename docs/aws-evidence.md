@@ -1,19 +1,19 @@
 # ConsultRAG on AWS: evidence report
 
-**Snapshot:** 4 November 2026. The AWS checks and live requests below ran between 09:57 and 10:04 UTC.
-**Status:** a temporary environment in my own AWS account (region `ap-south-1`), run to test the deployment and then shut down to control cost. It is not a permanent public service.
+**Status:** shut down to control cost on 4 November 2026. This was a temporary environment in my own AWS account (region `ap-south-1`), run only to test the deployment. The URLs in this report no longer work.
+**When the evidence was captured:** on 4 November 2026, while the environment was running. The read-only AWS checks and HTTP requests ran between 09:57 and 10:04 UTC, and I took the screenshots during the same session.
 
 This report records what was actually deployed and checked, so it can be verified rather than taken on trust. Each item says who verified it and how. Account IDs, IP addresses, emails, ARNs that contain the account ID, tokens, cookies and the origin secret header value are masked or left out.
 
 ## Summary
 
-- The static Next.js frontend is served from a private S3 bucket through CloudFront over HTTPS. The FastAPI backend runs as one ECS Fargate task behind an Application Load Balancer, and CloudFront sends only the API paths there.
-- The load balancer forwards only requests that carry a secret origin header. Its security group admits only CloudFront's origin-facing address range. A direct request from outside timed out.
-- Data lives in an encrypted RDS PostgreSQL (pgvector) instance that is not publicly accessible. The database URL and the token signing key are in Secrets Manager.
+- The static Next.js frontend was served from a private S3 bucket through CloudFront over HTTPS. The FastAPI backend ran as one ECS Fargate task behind an Application Load Balancer, and CloudFront sent only the API paths there.
+- The load balancer forwarded only requests that carried a secret origin header. Its security group admitted only CloudFront's origin-facing address range. A direct request from outside timed out.
+- Data was stored in an encrypted RDS PostgreSQL (pgvector) instance that was not publicly accessible. The database URL and the token signing key were in Secrets Manager.
 - Through CloudFront, `GET /health` returned `200` and `GET /me` without a token returned a JSON `401`.
 - In manual browser tests (reported below), two real Google accounts signed in, the first became admin, the second joined by invitation, and changing its clearance changed which documents it could retrieve.
 
-## Architecture
+## Architecture (as deployed)
 
 ```mermaid
 flowchart LR
@@ -34,10 +34,10 @@ flowchart LR
 |---|---|---|
 | Repository | [github.com/Anurag-YadavIIH/consulting-rag-assistant](https://github.com/Anurag-YadavIIH/consulting-rag-assistant) | `git remote get-url origin` |
 | Branch and commit | `main` at `77e1695` ("Labelled redaction bars, interactive sign-in panel, checked local build", 2026-11-04T07:54:44Z) | See the next two rows |
-| Frontend | Built from `77e1695` | The live JavaScript contains text added in `77e1695` (the sign-in "how it works" panel and labelled redaction bars) and not the change in the later commit `33163db`. `index.html` in S3 was last modified 2026-11-04T09:07:47Z. |
+| Frontend | Built from `77e1695` | The JavaScript served at the time contained text added in `77e1695` (the sign-in "how it works" panel and labelled redaction bars) and not the change in the later commit `33163db`. `index.html` in S3 was last modified 2026-11-04T09:07:47Z. |
 | API image | `sha256:cfa75bf884a8b55955c0558b313509a14e15fc50ed4aa1ef0b0384cba3badcae`, tag `latest`, pushed 2026-11-04T08:52:19Z | ECR `describe-images`; the running task reports the same digest. **Inferred, not proven:** the image has no git label, but it was pushed after `77e1695`, and no API code changed between `77e1695` and the next commit. |
 
-The fix for an admin engagement-selector bug found on the live site is on the branch `fix/admin-engagement-selector` (`33163db`). It was **not** deployed during this snapshot.
+The fix for an admin engagement-selector bug found while the site was running is on the branch `fix/admin-engagement-selector` (`33163db`). It was **not** deployed during this snapshot.
 
 ## What was verified, by whom and how
 
@@ -89,7 +89,7 @@ Log excerpt (only lines without personal data; access-log lines are left out bec
 2026-11-04T09:43:54Z  INFO:     consultrag.authz.team: sign-in grant applied: invitation for user_id=<N>
 ```
 
-### 3. Live HTTP checks (run by Claude Code)
+### 3. HTTP checks while the environment was running (run by Claude Code)
 
 | Time (UTC) | Request | Result |
 |---|---|---|
@@ -178,16 +178,16 @@ CloudFront distribution: domain `dgpa8s0jg9n6a.cloudfront.net`, description "con
 
 - **Extractive answers.** The deployed API returns quoted passages from the documents, not generated prose. No language model was connected in this deployment.
 - **No relevance threshold.** Retrieval always returns the closest passages a user is allowed to see, even when none answers the question. The page says the passages may not answer it.
-- **HTTP between CloudFront and the load balancer.** Viewers use HTTPS, but the CloudFront to load balancer hop is plain HTTP, protected by the secret origin header and the CloudFront-only security group, not by TLS.
-- **CSP in report-only mode.** The Content-Security-Policy is sent as `Content-Security-Policy-Report-Only`, so it is not enforced.
+- **HTTP between CloudFront and the load balancer.** Viewers used HTTPS, but the CloudFront to load balancer hop was plain HTTP, protected by the secret origin header and the CloudFront-only security group, not by TLS.
+- **CSP in report-only mode.** The Content-Security-Policy was sent as `Content-Security-Policy-Report-Only`, so it was not enforced.
 - **One API task, and the keyword index.** The service ran with one task. The BM25 keyword index lives in memory in each API process, so running more than one task would need a shared fix first.
 - **No MFA on the IAM user** used for the deployment (0 MFA devices at the time of the check).
 - **Database settings for a test environment:** single AZ, backup retention 0 days, deletion protection off.
-- **ECR scan on push is off**, and the image is tagged `latest` with mutable tags.
-- **The task has a public IP** (needed to pull from ECR without a NAT gateway), but its security group only accepts traffic from the load balancer.
-- **No WAF** is attached to the CloudFront distribution.
-- **An admin engagement-selector bug** was seen on the live site: an admin with no explicit memberships saw no engagements. The fix is on `fix/admin-engagement-selector` and was not deployed in this snapshot.
-- **Temporary environment.** It ran for testing and was then shut down to control cost. Anyone reading this later should not expect the URL above to work.
+- **ECR scan on push was off**, and the image was tagged `latest` with mutable tags.
+- **The task had a public IP** (needed to pull from ECR without a NAT gateway), but its security group only accepted traffic from the load balancer.
+- **No WAF** was attached to the CloudFront distribution.
+- **An admin engagement-selector bug** was seen while the site was running: an admin with no explicit memberships saw no engagements. The fix is on `fix/admin-engagement-selector` and was not deployed in this snapshot.
+- **Temporary environment.** It ran only for testing and was shut down to control cost on 4 November 2026. The CloudFront URL and the other endpoints in this report no longer respond.
 - **Not measured:** there are no load, latency or availability figures in this report, and none should be inferred.
 
 ## How to reproduce

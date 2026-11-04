@@ -76,15 +76,15 @@ to any third-party API unless you explicitly wire one in.
 
 ## AWS deployment
 
-**Live demo status: temporary, currently running** (4 November 2026). It runs in my own AWS account only for testing and will be shut down to control cost, so the URL may stop working at any time.
+**Demo status: shut down to control cost** (4 November 2026). It was a temporary environment in my own AWS account, run only for testing, so there is no live URL. The screenshots and read-only AWS checks in the report were captured while it was running.
 
-I deployed ConsultRAG to AWS with **Terraform, Docker, ECR, ECS Fargate, an Application Load Balancer, CloudFront, S3, RDS PostgreSQL with pgvector, Secrets Manager, IAM and CloudWatch**. The static frontend is served from a private S3 bucket through CloudFront over HTTPS, and CloudFront sends only the API paths to the load balancer, which accepts requests only from CloudFront.
+I deployed ConsultRAG to AWS with **Terraform, Docker, ECR, ECS Fargate, an Application Load Balancer, CloudFront, S3, RDS PostgreSQL with pgvector, Secrets Manager, IAM and CloudWatch**. The static frontend was served from a private S3 bucket through CloudFront over HTTPS, and CloudFront sent only the API paths to the load balancer, which accepted requests only from CloudFront.
 
 What was checked, and by whom:
 
 - **Automated tests:** 356 backend and 208 frontend tests pass on the deployed commit.
 - **Read-only AWS checks:** service health, load balancer rules, CloudFront behaviours, RDS encryption and private access, S3 public access blocks, the deployed image digest and logs.
-- **Live requests:** `/health` returned `200` and `/me` without a token returned a JSON `401` through CloudFront, while a direct request to the load balancer timed out.
+- **Requests while it was running:** `/health` returned `200` and `/me` without a token returned a JSON `401` through CloudFront, while a direct request to the load balancer timed out.
 - **Manual browser tests (reported by me):** real Google sign-in with two accounts, the first admin from `INITIAL_ADMIN_EMAILS`, an invited Analyst, and a clearance change that changed which documents could be retrieved.
 
 The full report, with commands, UTC timestamps and known limitations, is in [docs/aws-evidence.md](docs/aws-evidence.md). Rebuild steps are in [docs/aws-frontend-runbook.md](docs/aws-frontend-runbook.md), and the earlier API-only deployment notes are in [docs/aws-deployment.md](docs/aws-deployment.md).
