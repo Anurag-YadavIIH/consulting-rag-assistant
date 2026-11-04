@@ -80,6 +80,26 @@ to any third-party API unless you explicitly wire one in.
 
 I deployed ConsultRAG to AWS with **Terraform, Docker, ECR, ECS Fargate, an Application Load Balancer, CloudFront, S3, RDS PostgreSQL with pgvector, Secrets Manager, IAM and CloudWatch**. The static frontend was served from a private S3 bucket through CloudFront over HTTPS, and CloudFront sent only the API paths to the load balancer, which accepted requests only from CloudFront.
 
+### Architecture on AWS (as deployed)
+
+```mermaid
+flowchart LR
+    U[Browser] -->|HTTPS| CF[CloudFront]
+    CF -->|"default: static frontend<br/>(origin access control)"| S3[(S3 bucket<br/>private, encrypted)]
+    CF -->|"API paths only<br/>/auth/*, /me, /query, /draft,<br/>/ingest, /ingest/*, /documents,<br/>/admin/*, /health<br/>HTTP + secret origin header"| ALB[Application Load Balancer<br/>default action: 403]
+    ALB -->|header matches| ECS[ECS Fargate<br/>1 FastAPI task]
+    ECS --> RDS[(RDS PostgreSQL 16<br/>pgvector, encrypted,<br/>not public)]
+    ECS -.-> SM[Secrets Manager<br/>database URL, token key]
+    ECS -.-> CW[CloudWatch Logs]
+    ECR[ECR image] -.-> ECS
+    U -.->|sign-in popup| G[Google Identity Services]
+```
+
+- **One HTTPS address.** The browser talked only to CloudFront, which served the frontend from S3 and passed the API paths to the load balancer, so there was no separate API domain and no cross-site cookies.
+- **The load balancer was not reachable on its own.** It answered `403` unless a request carried the secret header CloudFront adds, and its security group admitted only CloudFront's address range. A direct request from outside timed out.
+- **Private data stayed private.** The database was encrypted and not publicly accessible, and secrets were injected from Secrets Manager rather than written into the image or task settings.
+- **Sign-in:** Google confirmed who the user was; the API then issued its own short-lived token and read roles and clearance from Postgres on every refresh.
+
 What was checked, and by whom:
 
 - **Automated tests:** 356 backend and 208 frontend tests pass on the deployed commit.
