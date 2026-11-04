@@ -80,3 +80,18 @@ def test_ingest_cli_refuses_clearance_outside_one_to_three(tmp_path, clearance):
                         "--clearance", clearance, "--offline"], capture_output=True, text=True, timeout=60)
     assert r.returncode == 2 and "invalid choice" in r.stderr
     assert not (tmp_path / "idx").exists()
+
+
+def test_upload_source_name_is_kept_verbatim(tmp_path):
+    # The upload route has already cleaned the name (api/routes/ingest.py,
+    # clean_filename); the pipeline must not normalise it again, so citations
+    # and chunk IDs use exactly that name.
+    f = tmp_path / "upload.txt"
+    f.write_text("Quarterly notes about the pilot rollout and its results.")
+    store = NumpyVectorStore(dim=64)
+    pipe = IngestionPipeline(embedder=HashEmbedder(dim=64), store=store)
+    name = "Q3 report: final (v2) ./draft.txt"
+    assert pipe.ingest_path(f, engagement="acme", source_name=name) >= 1
+    chunks = store.all_chunks()
+    assert {c.metadata["source_path"] for c in chunks} == {name}
+    assert all(c.chunk_id.startswith(f"upload://acme/{name}#") for c in chunks)

@@ -1,10 +1,12 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from consultrag.chunking import Chunker, approx_token_count
-from consultrag.ingestion.base import RawSection
+from consultrag.ingestion.base import RawSection, normalize_source_path
 from consultrag.ingestion.registry import LoaderRegistry
 
 
@@ -75,3 +77,51 @@ def test_chunk_id_for_a_file_is_independent_of_other_files_in_the_batch(tmp_path
 
     assert solo_ids == batch_target_ids
     assert solo_ids  # sanity: not accidentally empty
+
+
+# --- source path normalisation: same result on Windows and Linux -----------------------
+
+BS = chr(92)  # a backslash, spelled out so the cases read the same on every OS
+
+
+@pytest.mark.parametrize("posix_path", [
+    "data/sample/doc.txt",
+    "/srv/data/doc.txt",              # absolute
+    "/srv/data/report:v2.txt",        # colon in a file name
+    "notes:2024/doc.txt",             # colon in a directory name
+    "c:notes/doc.txt",                # looks like a drive, but is a POSIX name
+    "../up/doc.txt",
+])
+def test_posix_paths_stay_unchanged(posix_path):
+    assert normalize_source_path(posix_path) == posix_path
+
+
+@pytest.mark.parametrize("raw,expected", [
+    (f"data{BS}sample{BS}doc.txt", "data/sample/doc.txt"),
+    (f"C:{BS}data{BS}doc.txt", "C:/data/doc.txt"),
+    (f"{BS}{BS}server{BS}share{BS}doc.txt", "//server/share/doc.txt"),
+    (f"mixed/dir{BS}doc.txt", "mixed/dir/doc.txt"),
+    (f"data{BS}{BS}x.txt", "data/x.txt"),
+])
+def test_windows_paths_use_forward_slashes(raw, expected):
+    assert normalize_source_path(raw) == expected
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("data//sample/./doc.txt", "data/sample/doc.txt"),
+    ("./doc.txt", "doc.txt"),
+    ("data/sample/", "data/sample"),
+])
+def test_repeated_separators_and_dot_parts_collapse(raw, expected):
+    assert normalize_source_path(raw) == expected
+
+
+def test_a_path_can_never_produce_an_upload_chunk_id():
+    # pipeline.UPLOAD_ID_PREFIX relies on "//" collapsing after "upload:".
+    for raw in ("upload://acme/x.txt", f"upload:{BS}{BS}acme{BS}x.txt"):
+        assert not normalize_source_path(raw).startswith("upload://")
+
+
+def test_raw_section_uses_the_same_normalisation():
+    raw = f"data{BS}sample{BS}doc.txt"
+    assert RawSection(text="x", source_path=raw).source_path == normalize_source_path(raw)

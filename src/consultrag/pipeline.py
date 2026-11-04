@@ -19,8 +19,8 @@ from .security.redaction import Redactor
 from .vectorstore import NumpyVectorStore, StoredChunk
 
 # Prefix for chunk IDs of named (uploaded) documents. RawSection normalizes
-# every loader path with Path.as_posix(), which collapses "//", so no ID built
-# from a filesystem path can ever start with this.
+# every loader path with normalize_source_path() (ingestion/base.py), which
+# collapses "//", so no ID built from a filesystem path can start with this.
 UPLOAD_ID_PREFIX = "upload://"
 
 
