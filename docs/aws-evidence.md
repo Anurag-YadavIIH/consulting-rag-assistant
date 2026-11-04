@@ -99,9 +99,9 @@ Log excerpt (only lines without personal data; access-log lines are left out bec
 | 10:01:20 | `curl --max-time 10 http://<alb-dns-name>/health` (direct to the load balancer) | No response; curl exit code 28 (timed out after 10 s) |
 | 10:01:30 | The same with a guessed `X-Origin-Verify` header | No response; curl exit code 28 |
 
-### 4. Manual browser tests (reported by me from screenshots)
+### 4. Manual browser tests (reported by me, with screenshots below)
 
-I ran these myself in a browser on the CloudFront URL. They are reported by me from my screenshots; Claude Code did not observe them directly.
+I ran these myself in a browser on the CloudFront URL. They are reported by me; Claude Code did not observe them directly. Most are backed by the screenshots in the next section.
 
 1. Real Google sign-in worked for two accounts on the CloudFront URL.
 2. The first account became admin through `INITIAL_ADMIN_EMAILS`.
@@ -109,8 +109,70 @@ I ran these myself in a browser on the CloudFront URL. They are reported by me f
 4. As Analyst, "What is the main barrier to adoption?" returned 2 sources, both `deck.pptx`. `acme_research.txt` was hidden.
 5. After changing that account to Manager, clearance 2, the same question returned 3 sources including `acme_research.txt`.
 6. Passages showed labelled redactions for email, phone and medical record number.
+7. The Activity page showed "2 passages returned, 1 withheld by access rules" for the Analyst, then "3 passages returned" for the Manager, with user numbers and no question text or emails.
+8. Removing the second account showed "Access removed", and its next reload showed "No access yet".
+9. A direct curl to the load balancer timed out, as expected.
+10. Uploads on AWS reported "3 items redacted" and "1 item redacted".
 
-Server-side corroboration for items 2 and 3 (checked by Claude Code): the API log shows `sign-in grant applied: initial_admin` at 09:09:57 UTC and `sign-in grant applied: invitation` at 09:43:54 UTC.
+Server-side corroboration (checked by Claude Code): the API log shows `sign-in grant applied: initial_admin` at 09:09:57 UTC and `sign-in grant applied: invitation` at 09:43:54 UTC (items 2 and 3), and Claude Code's own direct request to the load balancer also timed out (item 9, section 3).
+
+## Screenshots
+
+I took these screenshots myself during the tests on 4 November 2026. In the copies here, email addresses, ARNs containing the account ID, and one private IP address are covered with solid black rectangles; nothing else was edited, and image metadata was removed. Times in the app screenshots are in my local time zone (UTC+5:30).
+
+### Analyst at clearance 1 (supports item 4)
+
+![Ask page as the invited account at Analyst, clearance 1: Sources (2), both deck.pptx](images/ask-analyst.jpg)
+
+The invited account (User # 3, Analyst, clearance 1) asked "What is the main barrier to adoption?". Sources (2): `deck.pptx` slide 1 (notes) and `deck.pptx` slide 1. The quoted passage shows an "email removed" redaction label. Email masked.
+
+### Manager at clearance 2 (supports items 5 and 6)
+
+![Ask page as the same account at Manager, clearance 2: Sources (3) including acme_research.txt](images/ask-manager.jpg)
+
+The same account (User # 3, now Manager, clearance 2) asked the same question. Sources (3): `acme_research.txt` used in the answer, and two `deck.pptx` passages. The passage shows labelled redactions for email, phone and medical record number. Email masked.
+
+### Team page (supports items 2, 3 and the clearance change)
+
+![Team page: User # 1 Admin clearance 3, User # 3 Manager clearance 2, both in acme](images/team-access.jpg)
+
+Signed in as User # 1 (Admin, clearance 3). Members: User # 1 Admin, clearance 3, `acme`; User # 3 Manager, clearance 2, `acme`. No pending invitations. Emails masked.
+
+### Activity log (supports items 2, 3, 7 and 10)
+
+![Activity page: uploads with redaction counts, questions with passage counts, access changes by user number](images/activity-log.jpg)
+
+Events shown by user number, with no question text or email addresses: initial admin granted for user #1 (clearance 3), the invitation created and accepted for user #3 (clearance 1), uploads of `deck.pptx` ("2 chunks, 1 item redacted") and `acme_research.txt` ("1 chunk, 3 items redacted"), a question by user 3 with "2 passages returned, 1 withheld by access rules", the clearance change to 2, and a later question by user 3 with "3 passages returned". Nothing needed masking in this image.
+
+### Access removed (supports item 8)
+
+![Team page after removal: "Access removed." and User # 3 shown as No access](images/access-removed.jpg)
+
+After the admin removed the second account: the "Access removed." notice, and User # 3 listed with "No access", clearance 1, engagements "None". Emails masked.
+
+![No access yet page for User # 3](images/no-access.jpg)
+
+The removed account's next reload: "No access yet", signed in as User # 3. Email masked.
+
+### AWS console (supports section 2)
+
+These are console views I captured while the environment was running. They support, and do not replace, the read-only CLI checks in section 2.
+
+![ECS service consultrag-api: Active, 1 desired, 1 running, task definition consultrag-api:2, 1 healthy target](images/ecs-service.jpg)
+
+ECS service `consultrag-api`: status Active, 1 desired, 1 running, 0 pending, task definition `consultrag-api:2`, deployment Success, load balancer target `api:8000` with 1 healthy and 0 unhealthy. Service ARN masked.
+
+![Target group with 1 healthy target on HTTP port 8000](images/target-group.jpg)
+
+The load balancer's target group: target type IP, HTTP on port 8000, 1 total target, 1 healthy, 0 unhealthy. ARN and the target's private IP address masked.
+
+![RDS database consultrag: Available, db.t4g.micro, PostgreSQL, Internet access gateway Disabled](images/rds.jpg)
+
+RDS instance `consultrag`: status Available, class `db.t4g.micro`, engine PostgreSQL, ap-south-1a, Internet access gateway Disabled. This screenshot does not show the security group rule or the PubliclyAccessible setting; `PubliclyAccessible: false` comes from the read-only `aws rds describe-db-instances` check in section 2. Nothing needed masking.
+
+![CloudFront distribution: domain dgpa8s0jg9n6a.cloudfront.net, HTTP/3 and HTTP/2, description consultrag frontend and API](images/cloudfront.jpg)
+
+CloudFront distribution: domain `dgpa8s0jg9n6a.cloudfront.net`, description "consultrag frontend and API", HTTP/3, HTTP/2, HTTP/1.1 and HTTP/1.0, default root object `index.html`, standard logging off. The API path behaviours and origins are recorded from the CLI in section 2. ARN masked.
 
 ## Known limitations
 
