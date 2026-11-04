@@ -137,3 +137,31 @@
     }
   }
 }
+
+/* Sign-in "how it works" panel. The global reduced-motion rule above stops
+   these for people who ask for less motion. */
+@layer utilities {
+  .animate-sheet-in {
+    animation: sheet-in 320ms ease-out both;
+  }
+  .animate-tab-progress {
+    animation: tab-progress 6500ms linear both;
+  }
+  .demo-sweep [data-redacted] {
+    transform-origin: left center;
+    animation: redact-sweep 450ms ease-out both;
+  }
+}
+
+@keyframes sheet-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes tab-progress {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+@keyframes redact-sweep {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}

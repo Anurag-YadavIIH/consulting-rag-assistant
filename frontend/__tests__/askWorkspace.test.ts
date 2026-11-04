@@ -35,13 +35,31 @@ function cite(number: number, over: Partial<Citation> = {}): Citation {
 
 // --- redaction bars ---------------------------------------------------------------
 
-it("draws a bar with an accessible label for each known redaction marker", () => {
+it("draws a labelled bar for each known redaction marker", () => {
   const out = html(createElement(RedactedText, { text: "Call [REDACTED_EMAIL] or [REDACTED_PHONE]." }));
   expect(out.match(/data-redacted=/g)).toHaveLength(2);
-  expect(out).toContain('aria-label="Redacted email address"');
-  expect(out).toContain('aria-label="Redacted phone number"');
-  expect(out).toContain('role="img"');
+  expect(out).toMatch(/data-redacted="EMAIL"[^>]*>email removed<\/span>/);
+  expect(out).toMatch(/data-redacted="PHONE"[^>]*>phone removed<\/span>/);
+  expect(out).toContain('title="Email address removed before storage"');
+  expect(out).toContain("bg-redact");
+  expect(out).toContain("text-side-text");
   expect(out).not.toContain("[REDACTED_EMAIL]");
+  expect(out).not.toContain('role="img"'); // the bar's own words are its accessible name
+});
+
+it("every known marker gets its own words, taken from the marker type only", () => {
+  const expected: Record<string, string> = {
+    EMAIL: "email removed", SSN: "SSN removed", CREDIT_CARD: "card number removed", PHONE: "phone removed",
+    MRN: "medical record number removed", NPI: "provider ID removed", IP_ADDRESS: "IP address removed",
+    CUSTOM: "client term removed",
+  };
+  for (const [label, words] of Object.entries(expected)) {
+    const seg = splitRedactions(`a [REDACTED_${label}] b`)[1];
+    expect(seg.kind === "redacted" && seg.barText).toBe(words);
+    const out = html(createElement(RedactedText, { text: `a [REDACTED_${label}] b` }));
+    expect(out).toContain(`>${words}</span>`);
+    expect(out).not.toContain(`REDACTED_${label}`);
+  }
 });
 
 it("leaves unknown labels and look-alikes as plain text, never a bar", () => {
@@ -112,7 +130,7 @@ it("lists every source and shows the selected one in full", () => {
   expect(out.match(/aria-pressed="true"/g)).toHaveLength(1);
   expect(out).toContain("doc1.txt");
   expect(out).toContain("Contact ");
-  expect(out).toContain('aria-label="Redacted email address"'); // passage of source 2
+  expect(out).toContain('>email removed<'); // passage of source 2
   expect(out).not.toContain("Passage 1 text."); // source 1 isn't open
   expect(out).toContain("Similarity");
   expect(out).not.toContain("Clearance"); // citations don't carry it
@@ -193,7 +211,7 @@ it("quoted passages draw real redaction bars and stay escaped", () => {
       onSelect: () => {},
     })
   );
-  expect(out).toContain('aria-label="Redacted email address"');
+  expect(out).toContain('>email removed<');
   expect(out).not.toContain("<script>");
 });
 

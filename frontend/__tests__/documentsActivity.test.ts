@@ -89,12 +89,32 @@ it("the confirmation dialog has a title, a safe Cancel and the destructive actio
   expect(out).toContain("Delete document");
 });
 
-it("the sign-in page shows the headline, an accessible redaction bar and the three points", () => {
+it("the sign-in page shows a plain headline and the three points", () => {
   const out = html(createElement(SignInScreen, { onCredential: () => {} }));
-  expect(out).toContain("Find the answer. Keep the");
-  expect(out).toContain('aria-label="sensitive details"');
+  const h1 = out.match(/<h1[^>]*>([\s\S]*?)<\/h1>/)?.[1] ?? "";
+  expect(h1.trim()).toBe("Find the answer. Keep client details private."); // no bar standing in for a word
   for (const t of ["Redacted first", "Separated by engagement", "Every passage cited"]) expect(out).toContain(t);
   expect(out).toContain("Sign in with your Google account to continue.");
+});
+
+it("the how-it-works tabs are real tabs and the example sheet is redacted and labelled", () => {
+  const out = html(createElement(SignInScreen, { onCredential: () => {} }));
+  expect(out).toContain('role="tablist"');
+  expect(out.match(/role="tab"/g)).toHaveLength(3);
+  expect(out.match(/aria-selected="true"/g)).toHaveLength(1);
+  expect(out).toMatch(/role="tabpanel"[^>]*id="how-panel-redact"[^>]*aria-labelledby="how-tab-redact"/);
+  // The first render shows the stored version: real bars, and no raw email or phone.
+  expect(out).toContain('>email removed<');
+  expect(out).toContain('>phone removed<');
+  expect(out).not.toContain("analyst@example.com");
+  expect(out).not.toContain("408-555-0190");
+  expect(out).toContain("Example document");
+  expect(out).toMatch(/aria-pressed="true"[^>]*>As stored</);
+});
+
+it("the phone layout puts the sign-in card first", () => {
+  const out = html(createElement(SignInScreen, { onCredential: () => {} }));
+  expect(out).toMatch(/<section class="order-first[^"]*lg:order-none/);
 });
 
 // --- client calls -------------------------------------------------------------------------

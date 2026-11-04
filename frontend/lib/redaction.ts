@@ -17,9 +17,22 @@ export const REDACTION_LABELS: Record<string, string> = {
   CUSTOM: "client term",
 };
 
+/** The words shown inside each bar, e.g. "email removed". Built only from the
+ *  marker's label, so the original value can never reach the page. */
+const BAR_NAMES: Record<string, string> = {
+  EMAIL: "email",
+  SSN: "SSN",
+  CREDIT_CARD: "card number",
+  PHONE: "phone",
+  MRN: "medical record number",
+  NPI: "provider ID",
+  IP_ADDRESS: "IP address",
+  CUSTOM: "client term",
+};
+
 export type TextSegment =
   | { kind: "text"; text: string }
-  | { kind: "redacted"; label: string; description: string; text: string };
+  | { kind: "redacted"; label: string; description: string; barText: string; text: string };
 
 const MARKER = /\[REDACTED_([A-Z_]+)\]/g;
 
@@ -42,7 +55,7 @@ export function splitRedactions(text: string): TextSegment[] {
       ? REDACTION_LABELS[label]
       : undefined;
     if (description) {
-      segments.push({ kind: "redacted", label, description, text: match[0] });
+      segments.push({ kind: "redacted", label, description, barText: `${BAR_NAMES[label]} removed`, text: match[0] });
     } else {
       pushText(match[0]);
     }

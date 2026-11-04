@@ -46,6 +46,7 @@ const TEXT_PAIRS: Array<[TokenName, TokenName]> = [
   ["ok", "okBg"],
   ["panel", "danger"], // destructive confirm button
   ["sideText", "sideBg"], ["sideText", "sideRaised"],
+  ["sideText", "redact"], // the words inside a redaction bar
   ["sideMuted", "sideBg"], ["sideMuted", "sideRaised"],
   ["accent", "sideBg"], // "RAG" in the sidebar wordmark
 ];

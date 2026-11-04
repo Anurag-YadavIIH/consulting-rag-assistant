@@ -3,25 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { isGoogleSignInConfigured, renderGoogleSignInButton } from "../lib/auth";
 import { Wordmark } from "./Logo";
-
-// What the product does, limited to what the code enforces:
-//  - redaction runs in the ingestion pipeline before chunking, embedding and storage
-//  - retrieval is filtered by engagement membership and clearance (SQL + AccessPolicy)
-//  - every displayed passage carries a citation to its source document
-const POINTS: Array<{ title: string; body: string }> = [
-  {
-    title: "Redacted first",
-    body: "Emails, phone numbers and other identifiers are removed on the server before a document is stored or searched.",
-  },
-  {
-    title: "Separated by engagement",
-    body: "You only see documents from the engagements you belong to, at your clearance level.",
-  },
-  {
-    title: "Every passage cited",
-    body: "Results are passages quoted from your documents, each linked to its source file and location.",
-  },
-];
+import { HowItWorks } from "./signin/HowItWorks";
 
 /** Shown whenever there's no session. Renders no app data. */
 export function SignInScreen({
@@ -45,36 +27,23 @@ export function SignInScreen({
   }, [configured, onCredential]);
 
   return (
-    <div className="grid min-h-screen lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+    <div className="grid min-h-screen lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
       <section className="on-dark flex flex-col justify-between gap-10 bg-side-bg px-6 py-8 sm:px-10 lg:px-14 lg:py-12">
         <Wordmark surface="dark" size={28} />
-        <div className="max-w-xl">
+        <div className="max-w-3xl">
           <h1 className="font-display text-[34px] font-bold leading-tight tracking-tight text-side-text sm:text-[44px]">
-            Find the answer. Keep the{" "}
-            <span
-              role="img"
-              aria-label="sensitive details"
-              className="inline-block h-[0.8em] w-[3.2em] translate-y-[0.06em] bg-accent align-baseline"
-            />{" "}
-            private.
+            Find the answer. Keep client details private.
           </h1>
-          <ul className="mt-8 space-y-5">
-            {POINTS.map((p) => (
-              <li key={p.title} className="flex gap-3">
-                <span aria-hidden="true" className="mt-2 inline-block h-2 w-3 shrink-0 bg-accent" />
-                <div>
-                  <p className="font-display text-lg font-semibold text-side-text">{p.title}</p>
-                  <p className="text-base text-side-muted">{p.body}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <HowItWorks />
         </div>
         <p className="text-sm text-side-muted">Answers come only from documents your team uploads.</p>
       </section>
 
-      <section className="flex items-center justify-center bg-ground px-4 py-10 sm:px-6">
+      <section className="order-first flex items-center justify-center bg-ground px-4 py-10 sm:px-6 lg:order-none">
         <div className="w-full max-w-sm space-y-6 border border-rule bg-panel px-6 py-8">
+          <div className="lg:hidden">
+            <Wordmark size={24} />
+          </div>
           <div>
             <h2 className="text-xl font-semibold text-ink">Sign in</h2>
             <p className="mt-1 text-base text-muted">Sign in with your Google account to continue.</p>
